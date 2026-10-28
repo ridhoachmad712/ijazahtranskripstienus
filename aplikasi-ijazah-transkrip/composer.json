@@ -1,0 +1,14 @@
+{
+  "name": "stie-nusantara/ijazah-transkrip",
+  "description": "Aplikasi mandiri pengelolaan ijazah dan transkrip nilai STIE Nusantara Makassar",
+  "type": "project",
+  "require": {
+    "php": "^8.3",
+    "dompdf/dompdf": "^3.1.6",
+    "endroid/qr-code": "^5.1",
+    "phpoffice/phpspreadsheet": "^5.10"
+  },
+  "autoload": {
+    "files": ["app/bootstrap.php", "app/repository.php", "app/render.php", "app/import.php"]
+  }
+}

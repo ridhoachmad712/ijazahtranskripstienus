@@ -1,0 +1,410 @@
+<?php
+declare(strict_types=1);
+
+function programs(): array
+{
+    return [
+        'AKUNTANSI' => ['label' => 'S-1 Akuntansi', 'degree' => 'SARJANA AKUNTANSI (S.Ak.)', 'suffix'=>'S.Ak.'],
+        'MANAJEMEN' => ['label' => 'S-1 Manajemen', 'degree' => 'SARJANA MANAJEMEN (S.M.)', 'suffix'=>'S.M.'],
+    ];
+}
+
+function default_diploma_settings(string $program): array
+{
+    $programs = programs();
+    $spec = $programs[$program];
+    return [
+        'texts' => [
+            'institution_accreditation' => '',
+            'opening' => 'Dengan ini menyatakan bahwa :',
+            'study' => 'Telah menyelesaikan studi dengan baik dan memenuhi segala syarat Pendidikan Sarjana (S-1) pada :',
+            'program' => 'Program Studi ' . $spec['label'],
+            'program_accreditation' => '',
+            'confer' => 'oleh sebab itu kepadanya diberikan Ijazah dan Gelar :',
+            'degree' => $spec['degree'],
+            'rights' => 'beserta segala hak dan kewajiban yang melekat pada gelar tersebut.',
+            'left_role' => 'Ketua STIE Nusantara Makassar,',
+            'right_role' => 'Wakil Ketua Bidang Akademik,',
+            'left_name' => '',
+            'right_name' => '',
+            'left_nidn' => '',
+            'right_nidn' => '',
+        ],
+        'fields' => [
+            'number' => ['label'=>'Nomor ijazah nasional','x'=>145,'y'=>12,'w'=>140,'pt'=>13,'align'=>'right'],
+            'institution_accreditation' => ['label'=>'Akreditasi institusi','x'=>45,'y'=>53,'w'=>207,'pt'=>10,'align'=>'center'],
+            'opening' => ['label'=>'Kalimat pembuka','x'=>36,'y'=>64,'w'=>225,'pt'=>14,'align'=>'center'],
+            'name' => ['label'=>'Nama lulusan','x'=>32,'y'=>73,'w'=>233,'pt'=>32,'align'=>'center'],
+            'identity' => ['label'=>'Lahir dan NIM','x'=>34,'y'=>88,'w'=>229,'pt'=>14,'align'=>'center'],
+            'study' => ['label'=>'Kalimat studi','x'=>20,'y'=>100,'w'=>257,'pt'=>13,'align'=>'center'],
+            'program' => ['label'=>'Program studi','x'=>40,'y'=>110,'w'=>217,'pt'=>24,'align'=>'center'],
+            'program_accreditation' => ['label'=>'Akreditasi prodi','x'=>45,'y'=>120,'w'=>207,'pt'=>10,'align'=>'center'],
+            'confer' => ['label'=>'Kalimat pemberian gelar','x'=>35,'y'=>130,'w'=>227,'pt'=>14,'align'=>'center'],
+            'degree' => ['label'=>'Gelar','x'=>37,'y'=>139,'w'=>223,'pt'=>23,'align'=>'center'],
+            'rights' => ['label'=>'Hak dan kewajiban','x'=>38,'y'=>149,'w'=>221,'pt'=>13,'align'=>'center'],
+            'issue' => ['label'=>'Tanggal penerbitan','x'=>58,'y'=>162,'w'=>181,'pt'=>14,'align'=>'center'],
+            'left_role' => ['label'=>'Jabatan kiri','x'=>30,'y'=>171,'w'=>105,'pt'=>12,'align'=>'center'],
+            'right_role' => ['label'=>'Jabatan kanan','x'=>162,'y'=>171,'w'=>105,'pt'=>12,'align'=>'center'],
+            'left_name' => ['label'=>'Nama pejabat kiri','x'=>30,'y'=>190,'w'=>105,'pt'=>13,'align'=>'center'],
+            'right_name' => ['label'=>'Nama pejabat kanan','x'=>162,'y'=>190,'w'=>105,'pt'=>13,'align'=>'center'],
+            'left_nidn' => ['label'=>'NIDN kiri','x'=>30,'y'=>198,'w'=>105,'pt'=>10,'align'=>'center'],
+            'right_nidn' => ['label'=>'NIDN kanan','x'=>162,'y'=>198,'w'=>105,'pt'=>10,'align'=>'center'],
+        ],
+        'qr' => ['enabled'=>false,'x'=>12,'y'=>13,'size'=>22],
+    ];
+}
+
+function default_transcript_settings(string $program): array
+{
+    return [
+        'institution' => 'SEKOLAH TINGGI ILMU EKONOMI NUSANTARA MAKASSAR',
+        'address' => '',
+        'title' => 'TRANSKRIP NILAI',
+        'program_label' => programs()[$program]['label'],
+        'accreditation' => '',
+        'signer_role' => 'Ketua STIE Nusantara Makassar',
+        'signer_name' => '',
+        'signer_nidn' => '',
+        'issue_place' => 'Makassar',
+        'show_thesis' => true,
+    ];
+}
+
+function seed_templates(PDO $db): void
+{
+    $count = (int) $db->query('SELECT COUNT(*) FROM templates')->fetchColumn();
+    if ($count > 0) {
+        return;
+    }
+    $stmt = $db->prepare('INSERT INTO templates(kind,program_code,version,label,settings_json,active,created_at) VALUES(?,?,?,?,?,1,?)');
+    foreach (array_keys(programs()) as $program) {
+        foreach (['diploma', 'transcript'] as $kind) {
+            $settings = $kind === 'diploma' ? default_diploma_settings($program) : default_transcript_settings($program);
+            $stmt->execute([$kind, $program, 1, 'Versi awal', json_encode($settings, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR), now_local()]);
+        }
+    }
+}
+
+function find_graduate(int $id): ?array
+{
+    $stmt = db()->prepare('SELECT * FROM graduates WHERE id=?');
+    $stmt->execute([$id]);
+    return $stmt->fetch() ?: null;
+}
+
+function find_graduate_by_nim(string $nim): ?array
+{
+    $stmt = db()->prepare('SELECT * FROM graduates WHERE nim=?');
+    $stmt->execute([$nim]);
+    return $stmt->fetch() ?: null;
+}
+
+function list_graduates(string $search = ''): array
+{
+    $stmt = db()->prepare('SELECT g.*, (SELECT COUNT(*) FROM grades WHERE graduate_id=g.id) AS grade_count, (SELECT status FROM documents WHERE graduate_id=g.id AND kind="diploma" ORDER BY id DESC LIMIT 1) AS diploma_status, (SELECT status FROM documents WHERE graduate_id=g.id AND kind="transcript" ORDER BY id DESC LIMIT 1) AS transcript_status FROM graduates g WHERE ?="" OR g.nim LIKE ? OR g.name LIKE ? ORDER BY g.id DESC LIMIT 150');
+    $like = '%' . $search . '%';
+    $stmt->execute([$search, $like, $like]);
+    return $stmt->fetchAll();
+}
+
+function graduate_input(array $source): array
+{
+    $keys = ['nim','name','birth_place','birth_date','program_code','education_program','graduation_date','diploma_number','transcript_number','issue_date','thesis_title','official_credits','official_gpa'];
+    $out = [];
+    foreach ($keys as $key) {
+        $out[$key] = trim((string) ($source[$key] ?? ''));
+    }
+    return $out;
+}
+
+function graduate_errors(array $data, ?int $ignoreId = null): array
+{
+    $errors = [];
+    if ($data['nim'] === '' || mb_strlen($data['nim']) > 30) $errors[] = 'NIM wajib diisi (maksimal 30 karakter).';
+    if ($data['name'] === '' || mb_strlen($data['name']) > 180) $errors[] = 'Nama wajib diisi (maksimal 180 karakter).';
+    if (!array_key_exists($data['program_code'], programs())) $errors[] = 'Program studi tidak dikenal.';
+    foreach (['birth_date','graduation_date','issue_date'] as $key) {
+        if (!valid_iso_date($data[$key])) $errors[] = 'Tanggal ' . $key . ' harus YYYY-MM-DD.';
+    }
+    foreach (['diploma_number','transcript_number'] as $key) {
+        if (mb_strlen($data[$key]) > 100) $errors[] = $key . ' terlalu panjang.';
+    }
+    foreach (['official_credits','official_gpa'] as $key) {
+        if ($data[$key] !== '' && (!is_numeric($data[$key]) || (float) $data[$key] < 0 || (float) $data[$key] > ($key === 'official_gpa' ? 4 : 500))) $errors[] = $key . ' tidak valid.';
+    }
+    $stmt = db()->prepare('SELECT id FROM graduates WHERE nim=? AND id<>?');
+    $stmt->execute([$data['nim'], $ignoreId ?? 0]);
+    if ($stmt->fetch()) $errors[] = 'NIM sudah dipakai lulusan lain.';
+    return $errors;
+}
+
+function save_graduate(array $data, ?int $id = null): int
+{
+    $data = graduate_input($data);
+    $errors = graduate_errors($data, $id);
+    if ($errors) throw new DomainException(implode(' ', $errors));
+    if ($id !== null && graduate_has_issued_document($id)) throw new DomainException('Identitas lulusan terkunci karena ada dokumen aktif. Batalkan dokumen tersebut lebih dahulu.');
+    foreach (['official_credits','official_gpa'] as $key) {
+        if ($data[$key] === '') $data[$key] = null;
+    }
+    $db = db();
+    if ($id !== null) {
+        $stmt = $db->prepare('UPDATE graduates SET nim=?,name=?,birth_place=?,birth_date=?,program_code=?,education_program=?,graduation_date=?,diploma_number=?,transcript_number=?,issue_date=?,thesis_title=?,official_credits=?,official_gpa=?,updated_at=? WHERE id=?');
+        $stmt->execute([...array_values($data), now_local(), $id]);
+        audit('graduate', $id, 'updated');
+        return $id;
+    }
+    $stmt = $db->prepare('INSERT INTO graduates(nim,name,birth_place,birth_date,program_code,education_program,graduation_date,diploma_number,transcript_number,issue_date,thesis_title,official_credits,official_gpa,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
+    $stmt->execute([...array_values($data), now_local(), now_local()]);
+    $newId = (int) $db->lastInsertId();
+    audit('graduate', $newId, 'created');
+    return $newId;
+}
+
+function grades_for(int $graduateId): array
+{
+    $stmt = db()->prepare('SELECT * FROM grades WHERE graduate_id=? ORDER BY position,id');
+    $stmt->execute([$graduateId]);
+    return $stmt->fetchAll();
+}
+
+function grade_summary(array $grades): array
+{
+    $credits = 0.0;
+    $quality = 0.0;
+    foreach ($grades as $grade) {
+        $credits += (float) $grade['credits'];
+        $quality += (float) $grade['credits'] * (float) $grade['grade_weight'];
+    }
+    return ['credits'=>$credits, 'quality'=>$quality, 'gpa'=>$credits > 0 ? $quality / $credits : null];
+}
+
+function has_official_totals(array $graduate): bool
+{
+    foreach (['official_credits','official_gpa'] as $key) {
+        if (($graduate[$key] ?? null) === null || $graduate[$key] === '') return false;
+    }
+    return true;
+}
+
+function graduate_has_issued_document(int $graduateId, ?string $kind = null): bool
+{
+    $sql = 'SELECT 1 FROM documents WHERE graduate_id=? AND status="issued"' . ($kind !== null ? ' AND kind=?' : '') . ' LIMIT 1';
+    $stmt = db()->prepare($sql);
+    $stmt->execute($kind !== null ? [$graduateId, $kind] : [$graduateId]);
+    return (bool) $stmt->fetchColumn();
+}
+
+function assert_grades_editable(int $graduateId): void
+{
+    if (graduate_has_issued_document($graduateId, 'transcript')) throw new DomainException('Nilai terkunci karena transkrip aktif sudah terbit. Batalkan transkrip lebih dahulu.');
+}
+
+function save_grade(int $graduateId, array $source): void
+{
+    if (!find_graduate($graduateId)) throw new DomainException('Lulusan tidak ditemukan.');
+    assert_grades_editable($graduateId);
+    $code = trim((string) ($source['course_code'] ?? ''));
+    $name = trim((string) ($source['course_name'] ?? ''));
+    $letter = trim((string) ($source['grade_letter'] ?? ''));
+    $credits = filter_var($source['credits'] ?? null, FILTER_VALIDATE_FLOAT);
+    $weight = filter_var($source['grade_weight'] ?? null, FILTER_VALIDATE_FLOAT);
+    $position = filter_var($source['position'] ?? null, FILTER_VALIDATE_INT);
+    if ($code === '' || $name === '' || $letter === '' || $credits === false || $credits <= 0 || $credits > 20 || $weight === false || $weight < 0 || $weight > 4 || $position === false || $position < 1) {
+        throw new DomainException('Kode, nama, urutan, SKS, nilai, atau bobot tidak valid.');
+    }
+    $stmt = db()->prepare('INSERT INTO grades(graduate_id,position,course_code,course_name,group_name,credits,grade_letter,grade_weight) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(graduate_id,course_code) DO UPDATE SET position=excluded.position,course_name=excluded.course_name,group_name=excluded.group_name,credits=excluded.credits,grade_letter=excluded.grade_letter,grade_weight=excluded.grade_weight');
+    $stmt->execute([$graduateId, $position, $code, $name, trim((string) ($source['group_name'] ?? '')), $credits, $letter, $weight]);
+    audit('graduate', $graduateId, 'grade_saved', $code);
+}
+
+function delete_grade(int $graduateId, int $gradeId): void
+{
+    assert_grades_editable($graduateId);
+    $stmt = db()->prepare('DELETE FROM grades WHERE id=? AND graduate_id=?');
+    $stmt->execute([$gradeId, $graduateId]);
+    if ($stmt->rowCount()) audit('graduate', $graduateId, 'grade_deleted', (string) $gradeId);
+}
+
+function active_template(string $kind, string $program): ?array
+{
+    $stmt = db()->prepare('SELECT * FROM templates WHERE kind=? AND program_code=? AND active=1 ORDER BY version DESC LIMIT 1');
+    $stmt->execute([$kind, $program]);
+    $row = $stmt->fetch();
+    if (!$row) return null;
+    $row['settings'] = normalized_template_settings($kind, $program, json_decode($row['settings_json'], true, 512, JSON_THROW_ON_ERROR));
+    return $row;
+}
+
+function template_by_id(int $id): ?array
+{
+    $stmt = db()->prepare('SELECT * FROM templates WHERE id=?');
+    $stmt->execute([$id]);
+    $row = $stmt->fetch();
+    if (!$row) return null;
+    $row['settings'] = normalized_template_settings($row['kind'], $row['program_code'], json_decode($row['settings_json'], true, 512, JSON_THROW_ON_ERROR));
+    return $row;
+}
+
+function normalized_template_settings(string $kind, string $program, array $saved): array
+{
+    $defaults = $kind === 'diploma' ? default_diploma_settings($program) : default_transcript_settings($program);
+    return array_replace_recursive($defaults, $saved);
+}
+
+function template_settings_from_source(array $current, array $source): array
+{
+    $settings = $current['settings'];
+    $kind = $current['kind'];
+    if ($kind === 'diploma') {
+        foreach ($settings['texts'] as $key => $_) $settings['texts'][$key] = trim((string) ($source['text'][$key] ?? ''));
+        foreach ($settings['fields'] as $key => $field) {
+            foreach (['x','y','w','pt'] as $part) {
+                $value = filter_var($source['field'][$key][$part] ?? null, FILTER_VALIDATE_FLOAT);
+                $max = $part === 'y' ? 210 : ($part === 'pt' ? 48 : 297);
+                if ($value === false || $value < 0 || $value > $max || ($part === 'w' && $value < 10) || ($part === 'pt' && $value < 6)) throw new DomainException('Posisi atau ukuran bidang ' . $key . ' tidak valid.');
+                $settings['fields'][$key][$part] = (float) $value;
+            }
+            if ($settings['fields'][$key]['x'] + $settings['fields'][$key]['w'] > 297) throw new DomainException('Bidang ' . $key . ' melewati tepi kanan blanko.');
+            $align = (string) ($source['field'][$key]['align'] ?? 'center');
+            if (!in_array($align, ['left','center','right'], true)) throw new DomainException('Perataan teks tidak valid.');
+            $settings['fields'][$key]['align'] = $align;
+        }
+        $settings['qr']['enabled'] = isset($source['qr_enabled']);
+        foreach (['x','y','size'] as $part) {
+            $value = filter_var($source['qr'][$part] ?? null, FILTER_VALIDATE_FLOAT);
+            if ($value === false || $value < 0 || $value > ($part === 'y' ? 210 : 297)) throw new DomainException('Posisi QR tidak valid.');
+            $settings['qr'][$part] = (float) $value;
+        }
+        if ($settings['qr']['size'] < 15 || $settings['qr']['size'] > 40 || $settings['qr']['x'] + $settings['qr']['size'] > 297 || $settings['qr']['y'] + $settings['qr']['size'] > 210) throw new DomainException('Ukuran atau posisi QR melewati blanko.');
+    } else {
+        foreach ($settings as $key => $value) {
+            $settings[$key] = is_bool($value) ? isset($source[$key]) : trim((string) ($source[$key] ?? ''));
+        }
+    }
+    return $settings;
+}
+
+function save_template_version(string $kind, string $program, array $source): int
+{
+    $current = active_template($kind, $program);
+    if (!$current) throw new DomainException('Template tidak ditemukan.');
+    $settings = template_settings_from_source($current, $source);
+    $label = trim((string) ($source['label'] ?? ''));
+    if ($label === '') throw new DomainException('Nama versi wajib diisi.');
+    $db = db();
+    $db->beginTransaction();
+    try {
+        $db->prepare('UPDATE templates SET active=0 WHERE kind=? AND program_code=?')->execute([$kind, $program]);
+        $stmt = $db->prepare('INSERT INTO templates(kind,program_code,version,label,settings_json,active,created_at) VALUES(?,?,?,?,?,1,?)');
+        $stmt->execute([$kind, $program, (int) $current['version'] + 1, $label, json_encode($settings, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR), now_local()]);
+        $id = (int) $db->lastInsertId();
+        audit('template', $id, 'version_created', $kind . ':' . $program);
+        $db->commit();
+        return $id;
+    } catch (Throwable $e) {
+        $db->rollBack();
+        throw $e;
+    }
+}
+
+function documents_for(int $graduateId): array
+{
+    $stmt = db()->prepare('SELECT * FROM documents WHERE graduate_id=? ORDER BY id DESC');
+    $stmt->execute([$graduateId]);
+    return $stmt->fetchAll();
+}
+
+function find_document(int $id): ?array
+{
+    $stmt = db()->prepare('SELECT * FROM documents WHERE id=?');
+    $stmt->execute([$id]);
+    return $stmt->fetch() ?: null;
+}
+
+function find_document_by_token(string $token): ?array
+{
+    $stmt = db()->prepare('SELECT * FROM documents WHERE qr_token=? AND kind="diploma"');
+    $stmt->execute([$token]);
+    return $stmt->fetch() ?: null;
+}
+
+function issue_document(int $graduateId, string $kind): int
+{
+    if (!in_array($kind, ['diploma','transcript'], true)) throw new DomainException('Jenis dokumen tidak valid.');
+    $graduate = find_graduate($graduateId);
+    if (!$graduate) throw new DomainException('Lulusan tidak ditemukan.');
+    $number = trim((string) $graduate[$kind === 'diploma' ? 'diploma_number' : 'transcript_number']);
+    if ($graduate['nim'] === '' || $graduate['name'] === '' || $graduate['birth_place'] === '' || $graduate['birth_date'] === '' || $graduate['graduation_date'] === '' || $graduate['issue_date'] === '' || $number === '') throw new DomainException('Identitas, tanggal, dan nomor dokumen harus lengkap sebelum diterbitkan.');
+    if ($graduate['issue_date'] < $graduate['graduation_date']) throw new DomainException('Tanggal penerbitan tidak boleh lebih awal dari tanggal kelulusan.');
+    $template = active_template($kind, $graduate['program_code']);
+    if (!$template) throw new DomainException('Template aktif belum tersedia.');
+    $grades = grades_for($graduateId);
+    if ($kind === 'transcript' && !$grades) throw new DomainException('Nilai mata kuliah belum diisi.');
+    if ($kind === 'transcript' && !has_official_totals($graduate)) throw new DomainException('Total SKS dan IPK resmi belum diisi.');
+    if ($kind === 'transcript') {
+        $summary = grade_summary($grades);
+        if (abs($summary['credits'] - (float) $graduate['official_credits']) > 0.001 || abs($summary['gpa'] - (float) $graduate['official_gpa']) > 0.011) throw new DomainException('Jumlah SKS/IPK resmi tidak cocok dengan nilai mata kuliah. Periksa kembali data dan aturan nilai.');
+    }
+    if ($kind === 'transcript' && ($template['settings']['signer_name'] ?? '') === '') throw new DomainException('Nama penandatangan transkrip belum diisi di template.');
+    if ($kind === 'diploma' && (($template['settings']['texts']['left_name'] ?? '') === '' || ($template['settings']['texts']['right_name'] ?? '') === '')) throw new DomainException('Nama kedua penandatangan ijazah belum diisi di template.');
+    if ($kind === 'diploma' && trim((string) ($template['settings']['texts']['program_accreditation'] ?? '')) === '') throw new DomainException('Redaksi akreditasi program studi belum diisi di template ijazah.');
+    if ($kind === 'diploma' && !empty($template['settings']['qr']['enabled']) && ($problem = qr_base_url_problem((string) app_config()['base_url'])) !== null) throw new DomainException($problem . ' Ijazah dengan QR belum dapat diterbitkan.');
+    $db = db();
+    $db->beginTransaction();
+    $pdfPath = null;
+    try {
+        $stmt = $db->prepare('SELECT id FROM documents WHERE graduate_id=? AND kind=? AND status="issued" LIMIT 1');
+        $stmt->execute([$graduateId, $kind]);
+        if ($stmt->fetch()) throw new DomainException('Dokumen aktif sudah ada. Batalkan dahulu jika perlu penggantian.');
+        $stmt = $db->prepare('SELECT id FROM documents WHERE kind=? AND document_number=? AND status="issued" LIMIT 1');
+        $stmt->execute([$kind, $number]);
+        if ($stmt->fetch()) throw new DomainException('Nomor dokumen sudah dipakai dokumen aktif lain.');
+        $replaced = $db->prepare('SELECT id FROM documents WHERE graduate_id=? AND kind=? AND status="revoked" ORDER BY id DESC LIMIT 1');
+        $replaced->execute([$graduateId, $kind]);
+        $replacesId = $replaced->fetchColumn() ?: null;
+        $snapshot = ['graduate'=>$graduate, 'grades'=>$grades, 'template'=>$template, 'summary'=>grade_summary($grades)];
+        $token = $kind === 'diploma' ? bin2hex(random_bytes(24)) : null;
+        $stmt = $db->prepare('INSERT INTO documents(graduate_id,kind,document_number,status,template_id,snapshot_json,qr_token,issued_at,replaces_id) VALUES(?,?,?,"issued",?,?,?,?,?)');
+        $stmt->execute([$graduateId,$kind,$number,$template['id'],json_encode($snapshot,JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),$token,now_local(),$replacesId]);
+        $id = (int) $db->lastInsertId();
+        $pdfBytes = render_pdf($kind, $snapshot, $token);
+        $documentsDir = rtrim((string) app_config()['storage_root'], '/\\') . '/documents';
+        if (!is_dir($documentsDir) && !mkdir($documentsDir, 0770, true) && !is_dir($documentsDir)) throw new RuntimeException('Direktori dokumen tidak dapat dibuat.');
+        $pdfPath = $documentsDir . '/' . $id . '.pdf';
+        if (file_put_contents($pdfPath, $pdfBytes, LOCK_EX) === false) throw new RuntimeException('PDF final gagal disimpan.');
+        $db->prepare('UPDATE documents SET pdf_path=?,pdf_sha256=? WHERE id=?')->execute([$pdfPath, hash('sha256', $pdfBytes), $id]);
+        $db->prepare('INSERT INTO document_events(document_id,admin_id,action,created_at) VALUES(?,?,"issued",?)')->execute([$id,$_SESSION['admin_id'] ?? null,now_local()]);
+        audit('document', $id, 'issued', $kind);
+        $db->commit();
+        return $id;
+    } catch (Throwable $e) {
+        $db->rollBack();
+        if ($pdfPath && is_file($pdfPath)) unlink($pdfPath);
+        throw $e;
+    }
+}
+
+function revoke_document(int $id, string $reason): void
+{
+    $reason = trim($reason);
+    if ($reason === '') throw new DomainException('Alasan pembatalan wajib diisi.');
+    $db = db();
+    $db->beginTransaction();
+    try {
+        $stmt = $db->prepare('UPDATE documents SET status="revoked",revoked_at=?,revoked_reason=? WHERE id=? AND status="issued"');
+        $stmt->execute([now_local(),$reason,$id]);
+        if (!$stmt->rowCount()) throw new DomainException('Dokumen aktif tidak ditemukan.');
+        $db->prepare('INSERT INTO document_events(document_id,admin_id,action,reason,created_at) VALUES(?,?,"revoked",?,?)')->execute([$id,$_SESSION['admin_id'] ?? null,$reason,now_local()]);
+        audit('document', $id, 'revoked', $reason);
+        $db->commit();
+    } catch (Throwable $e) {
+        $db->rollBack();
+        throw $e;
+    }
+}
+
+function record_reprint(int $id): void
+{
+    db()->prepare('INSERT INTO document_events(document_id,admin_id,action,created_at) VALUES(?,?,"downloaded",?)')->execute([$id,$_SESSION['admin_id'] ?? null,now_local()]);
+}

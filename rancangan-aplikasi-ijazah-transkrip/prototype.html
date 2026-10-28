@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Rancangan Aplikasi Ijazah & Transkrip — STIE Nusantara Makassar</title>
+  <link rel="stylesheet" href="assets/bootstrap/bootstrap.min.css">
+  <style>
+    :root{--stie-teal:#24636a;--stie-ink:#24343e;--stie-line:#e4e9ec}
+    body{background:#fff;color:var(--stie-ink)}
+    .sidebar{--bs-offcanvas-width:226px;--bs-offcanvas-bg:#fff;background:#fff!important;color:var(--stie-ink);border-right:1px solid var(--stie-line)}
+    .sidebar .offcanvas-header,.sidebar .offcanvas-body{background:#fff;color:var(--stie-ink)}
+    .sidebar .offcanvas-header{display:flex!important}
+    .sidebar .nav-link{color:#52616b;border-radius:.25rem;padding:.65rem .8rem}
+    .sidebar .nav-link:hover{background:#f4f7f8;color:var(--stie-ink)}
+    .sidebar .nav-link.active{background:#eaf2f2;color:#1b5c64}
+    .sidebar .nav-link.active{font-weight:600}
+    .brand-rule{border-color:var(--stie-line)!important}
+    .app-main{min-width:0}
+    .topbar{height:62px;border-color:var(--stie-line)!important}
+    .eyebrow{display:none}
+    h1.h3{font-size:1.55rem;font-weight:650}
+    .card{border-color:var(--stie-line);border-radius:.45rem;box-shadow:none!important}
+    .stat-accent{border-left:0}
+    .stat-accent .display-6{font-size:1.75rem}
+    .btn{border-radius:.35rem}
+    .btn-primary{--bs-btn-bg:var(--stie-teal);--bs-btn-border-color:var(--stie-teal);--bs-btn-hover-bg:#1c5158;--bs-btn-hover-border-color:#1c5158}
+    .badge{border-radius:.25rem;font-weight:600}
+    .alert-warning{--bs-alert-bg:#f7f8f9;--bs-alert-border-color:var(--stie-line);--bs-alert-color:#53616b}
+    .document-preview{background:#fff;border:1px solid #d6dee2;color:#111}
+    .diploma-preview{aspect-ratio:297/210;position:relative;font-family:Georgia,'Times New Roman',serif;text-align:center}
+    .diploma-preview .number{position:absolute;top:5%;right:4%;font-size:clamp(.48rem,.78vw,.75rem)}
+    .diploma-preview .middle{position:absolute;top:29%;left:6%;right:6%}
+    .diploma-preview .graduate-name{font-size:clamp(1.1rem,2.25vw,2rem);margin:7% 0 2%}
+    .diploma-preview .detail-line{font-size:clamp(.5rem,.85vw,.85rem)}
+    .diploma-preview .program-line{font-size:clamp(.8rem,1.4vw,1.3rem);margin:7% 0 2%}
+    .diploma-preview .signature-space{position:absolute;bottom:9%;left:6%;font:normal .6rem Arial,sans-serif}
+    .diploma-preview .qr-space{position:absolute;bottom:8%;right:5%;border:1px dashed #8ea0ac;padding:.45rem;font:normal .58rem Arial,sans-serif;color:#627887}
+    .transcript-preview{min-height:345px;padding:1rem;font:normal .62rem Arial,sans-serif}
+    .transcript-preview .transcript-title{text-align:center;border-bottom:2px solid #222;padding-bottom:.55rem}
+    .transcript-preview .table{--bs-table-bg:#fff;font-size:.57rem}
+    .transcript-preview .table>:not(caption)>*>*{padding:.18rem .25rem;border-color:#777}
+    [data-screen][hidden]{display:none!important}
+    @media(min-width:992px){.sidebar{position:fixed!important;inset:0 auto 0 0;width:226px;transform:none!important;visibility:visible!important}.app-main{margin-left:226px}}
+    @media(max-width:991.98px){.sidebar .offcanvas-header{display:flex}.diploma-preview .graduate-name{font-size:clamp(1.1rem,4vw,2rem)}.diploma-preview .detail-line{font-size:clamp(.45rem,1.7vw,.8rem)}.diploma-preview .program-line{font-size:clamp(.75rem,2.2vw,1.25rem)}}
+  </style>
+</head>
+<body>
+  <aside class="offcanvas-lg offcanvas-start sidebar" tabindex="-1" id="mainMenu" aria-labelledby="brandTitle">
+    <div class="offcanvas-header border-bottom brand-rule px-4 pt-4 pb-3">
+      <div><div id="brandTitle" class="fw-semibold lh-sm">STIE Nusantara</div><div class="small text-secondary mt-1">Ijazah & Transkrip</div></div>
+      <button type="button" class="btn-close d-lg-none" data-bs-dismiss="offcanvas" data-bs-target="#mainMenu" aria-label="Tutup menu"></button>
+    </div>
+    <div class="offcanvas-body d-block px-3 py-3">
+      <nav class="nav nav-pills flex-column gap-1" aria-label="Menu rancangan">
+        <a class="nav-link active" href="#beranda" data-page="beranda">Beranda</a>
+        <a class="nav-link" href="#lulusan" data-page="lulusan">Data lulusan</a>
+        <a class="nav-link" href="#impor" data-page="impor">Impor CSV</a>
+        <a class="nav-link" href="#detail" data-page="detail">Detail lulusan</a>
+        <a class="nav-link" href="#template" data-page="template">Template</a>
+        <a class="nav-link" href="#verifikasi" data-page="verifikasi">Verifikasi QR</a>
+      </nav>
+      <p class="small text-secondary mt-5 px-2">Sketsa antarmuka dengan data contoh.</p>
+    </div>
+  </aside>
+
+  <div class="app-main">
+    <header class="topbar bg-white border-bottom d-flex align-items-center justify-content-between px-3 px-lg-4">
+      <div class="d-flex align-items-center gap-3">
+        <button class="btn btn-outline-secondary d-lg-none" type="button" data-bs-toggle="offcanvas" data-bs-target="#mainMenu" aria-controls="mainMenu" aria-label="Buka menu">☰</button>
+        <strong id="pageTitle">Beranda</strong>
+      </div>
+      <span class="small text-secondary">Admin <span class="d-none d-sm-inline">· Mode rancangan</span></span>
+    </header>
+    <main class="container-fluid px-3 px-lg-4 py-4" style="max-width:1300px">
+      <section data-screen="beranda">
+        <div class="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-4"><div><h1 class="h3 mb-2">Beranda</h1><p class="text-secondary mb-0">Kelola data lulusan untuk ijazah dan transkrip nilai.</p></div><a class="btn btn-primary" href="#impor" data-go="impor">Impor CSV</a></div>
+        <div class="row g-0 border-top border-bottom py-3 mb-4">
+          <div class="col-sm-4 py-2"><div class="stat-accent"><div class="display-6 fw-semibold">24</div><div class="text-secondary small">Draf lulusan</div></div></div>
+          <div class="col-sm-4 py-2"><div class="stat-accent"><div class="display-6 fw-semibold">3</div><div class="text-secondary small">Perlu perbaikan data</div></div></div>
+          <div class="col-sm-4 py-2"><div class="stat-accent"><div class="display-6 fw-semibold">12</div><div class="text-secondary small">Dokumen terbit</div></div></div>
+        </div>
+        <h2 class="h6 mb-3">Lanjutkan pekerjaan</h2><div class="d-flex flex-wrap gap-2"><a class="btn btn-outline-secondary" href="#lulusan" data-go="lulusan">Lihat data lulusan</a><a class="btn btn-outline-secondary" href="#template" data-go="template">Atur template</a></div>
+        <p class="text-secondary small mt-4">Angka pada sketsa ini hanya contoh.</p>
+      </section>
+
+      <section data-screen="lulusan" hidden>
+        <div class="eyebrow mb-2">Data bersama</div><h1 class="h3 mb-2">Data lulusan</h1><p class="text-secondary mb-4">Satu profil dipakai pada ijazah dan transkrip nilai.</p>
+        <div class="card shadow-sm mb-3"><div class="card-body d-flex flex-wrap gap-2"><a class="btn btn-primary" href="#impor" data-go="impor">Impor data</a><a class="btn btn-outline-secondary" href="#detail" data-go="detail">Buka contoh profil</a></div></div>
+        <div class="card shadow-sm"><div class="table-responsive"><table class="table table-hover align-middle mb-0"><thead class="table-light"><tr><th scope="col">NIM</th><th scope="col">Nama</th><th scope="col">Prodi</th><th scope="col">Ijazah</th><th scope="col">Transkrip</th><th scope="col">Tindakan</th></tr></thead><tbody><tr><td>0012345678</td><td>Contoh Lulusan</td><td>Akuntansi</td><td><span class="badge text-bg-warning">Draf</span></td><td><span class="badge text-bg-warning">Draf</span></td><td><a class="btn btn-sm btn-outline-secondary" href="#detail" data-go="detail">Buka</a></td></tr><tr><td>0012345679</td><td>Contoh Kedua</td><td>Manajemen</td><td><span class="badge text-bg-success">Terbit</span></td><td><span class="badge text-bg-info">Belum lengkap</span></td><td><a class="btn btn-sm btn-outline-secondary" href="#detail" data-go="detail">Buka</a></td></tr></tbody></table></div></div>
+      </section>
+
+      <section data-screen="impor" hidden>
+        <div class="eyebrow mb-2">Satu proses impor</div><h1 class="h3 mb-2">Impor lulusan dan nilai</h1><p class="text-secondary mb-4">Identitas hanya ada di berkas lulusan; nilai mata kuliah dicocokkan melalui NIM.</p>
+        <div class="row g-3"><div class="col-lg-6"><div class="card shadow-sm h-100"><div class="card-body"><h2 class="h5 mb-3"><span class="badge text-bg-primary me-2">1</span>Pilih dua CSV</h2><div class="mb-3"><label class="form-label" for="csvLulusan">Berkas lulusan</label><input class="form-control" id="csvLulusan" type="file" accept=".csv" disabled></div><div class="mb-3"><label class="form-label" for="csvNilai">Berkas nilai mata kuliah</label><input class="form-control" id="csvNilai" type="file" accept=".csv" disabled></div><p class="form-text">Kontrol dinonaktifkan pada sketsa. Struktur contoh tersedia di folder <code>contoh-csv</code>.</p></div></div></div><div class="col-lg-6"><div class="card shadow-sm h-100"><div class="card-body"><h2 class="h5 mb-3"><span class="badge text-bg-primary me-2">2</span>Periksa hasil</h2><p>Contoh ringkasan: 23 lulusan siap, 1 NIM ganda, 2 nilai tanpa NIM yang cocok.</p><div class="alert alert-warning mb-0">Berkas tidak disimpan sebelum Admin melihat baris bermasalah dan menyetujui impor.</div></div></div></div></div>
+      </section>
+
+      <section data-screen="detail" hidden>
+        <div class="eyebrow mb-2">Profil lulusan · draf</div><h1 class="h3 mb-2">Contoh Lulusan</h1><p class="text-secondary mb-4">Perubahan identitas draf akan terlihat pada kedua pratinjau dokumen.</p>
+        <div class="card shadow-sm mb-3"><div class="card-body"><h2 class="h5 mb-3">Identitas bersama</h2><div class="row g-3"><div class="col-md-4"><label class="form-label small fw-semibold" for="nim">NIM</label><input class="form-control" id="nim" readonly value="0012345678"></div><div class="col-md-4"><label class="form-label small fw-semibold" for="nama">Nama lengkap</label><input class="form-control" id="nama" readonly value="Contoh Lulusan"></div><div class="col-md-4"><label class="form-label small fw-semibold" for="prodi">Program studi</label><input class="form-control" id="prodi" readonly value="S-1 Akuntansi"></div><div class="col-md-4"><label class="form-label small fw-semibold" for="tempat">Tempat lahir</label><input class="form-control" id="tempat" readonly value="Sungguminasa"></div><div class="col-md-4"><label class="form-label small fw-semibold" for="tanggal">Tanggal lahir</label><input class="form-control" id="tanggal" readonly value="18 April 2002"></div><div class="col-md-4"><label class="form-label small fw-semibold" for="nomor">Nomor ijazah nasional</label><input class="form-control" id="nomor" readonly value="CONTOH-NOMOR-RESMI-001"></div></div><p class="form-text mb-0 mt-3">Isian pada sketsa dibuat hanya baca. Aplikasi final menyediakan edit, validasi, dan riwayat.</p></div></div>
+        <div class="row g-3"><div class="col-xl-6"><div class="card shadow-sm h-100"><div class="card-body"><h2 class="h5 mb-3">Pratinjau ijazah</h2><div class="document-preview diploma-preview"><div class="number">Nomor Ijazah Nasional: CONTOH-NOMOR-RESMI-001</div><div class="middle"><div class="detail-line">Dengan ini menyatakan bahwa:</div><div class="graduate-name">Contoh Lulusan</div><div class="detail-line">Lahir di Sungguminasa, 18 April 2002 · NIM 0012345678</div><div class="program-line">Program Studi S-1 Akuntansi</div><div class="detail-line">SARJANA AKUNTANSI (S.Ak.)</div></div><div class="signature-space">Ruang tanda tangan</div><div class="qr-space">Ruang QR: menunggu<br>uji blanko kosong</div></div><p class="form-text mb-0 mt-2">Latar blanko tidak ikut dicetak.</p></div></div></div><div class="col-xl-6"><div class="card shadow-sm h-100"><div class="card-body"><h2 class="h5 mb-3">Pratinjau transkrip</h2><div class="document-preview transcript-preview"><div class="transcript-title"><strong class="d-block">STIE NUSANTARA MAKASSAR</strong>TRANSKRIP NILAI · CONTOH-TR-001</div><div class="row gx-2 gy-1 my-2"><div class="col-6">Nama: Contoh Lulusan</div><div class="col-6">NIM: 0012345678</div><div class="col-6">Program: S-1 Akuntansi</div><div class="col-6">Lahir: Sungguminasa, 18 April 2002</div></div><table class="table table-bordered mb-2"><thead><tr><th>No.</th><th>Kode</th><th>Mata kuliah</th><th>SKS</th><th>Nilai</th></tr></thead><tbody><tr><td>1</td><td>AKT001</td><td>Pengantar Akuntansi</td><td>3</td><td>A</td></tr><tr><td>2</td><td>AKT002</td><td>Akuntansi Keuangan</td><td>3</td><td>B</td></tr></tbody></table><span>Total dan IPK menunggu aturan resmi STIE.</span></div></div></div></div></div>
+      </section>
+
+      <section data-screen="template" hidden>
+        <div class="eyebrow mb-2">Pengelolaan template</div><h1 class="h3 mb-2">Template dokumen</h1><p class="text-secondary mb-4">Versi template yang dipakai dokumen terbit disimpan sebagai arsip.</p>
+        <div class="row g-3"><div class="col-lg-6"><div class="card shadow-sm h-100"><div class="card-body"><h2 class="h5">Ijazah · A4 lanskap</h2><p>Cetak teks di atas blanko yang sudah memuat logo, yayasan, kampus, dan latar. Editor final mengatur posisi X/Y dalam mm, ukuran huruf, lebar, dan perataan.</p><span class="badge text-bg-warning">QR menunggu posisi fisik</span></div></div></div><div class="col-lg-6"><div class="card shadow-sm h-100"><div class="card-body"><h2 class="h5">Transkrip · beberapa halaman</h2><p>Cetak header STIE, profil lulusan, tabel nilai, ringkasan, dan pengesahan. Tabel bersambung tanpa menghilangkan baris saat halaman penuh.</p><span class="badge text-bg-info">Header resmi diperlukan</span></div></div></div></div>
+      </section>
+
+      <section data-screen="verifikasi" hidden>
+        <div class="eyebrow mb-2">Halaman publik · contoh</div><h1 class="h3 mb-4">Verifikasi ijazah</h1><div class="card shadow-sm mb-3"><div class="card-body"><span class="badge text-bg-success mb-3">Dokumen terbit</span><h2 class="h5">Contoh Lulusan</h2><dl class="row mb-3"><dt class="col-sm-4">Program studi</dt><dd class="col-sm-8">S-1 Akuntansi</dd><dt class="col-sm-4">Nomor ijazah</dt><dd class="col-sm-8">CONTOH-NOMOR-RESMI-001</dd><dt class="col-sm-4">Tanggal terbit</dt><dd class="col-sm-8">1 September 2026</dd></dl><div class="alert alert-warning mb-0">Cocokkan rincian ini dengan ijazah fisik. QR menunjukkan catatan penerbitan kampus; verifikasi nomor nasional dilakukan melalui PISN.</div></div></div><p class="text-secondary small">Halaman produksi tidak menampilkan NIK, tanggal lahir lengkap, nilai, atau berkas transkrip.</p>
+      </section>
+    </main>
+  </div>
+  <script src="assets/bootstrap/bootstrap.bundle.min.js"></script>
+  <script>
+    const titles={beranda:'Beranda',lulusan:'Data lulusan',impor:'Impor CSV',detail:'Detail lulusan',template:'Template',verifikasi:'Verifikasi QR'};
+    function show(page){
+      if(!titles[page])return;
+      document.querySelectorAll('[data-screen]').forEach(el=>{el.hidden=el.dataset.screen!==page});
+      document.querySelectorAll('[data-page]').forEach(el=>{el.classList.toggle('active',el.dataset.page===page);if(el.dataset.page===page)el.setAttribute('aria-current','page');else el.removeAttribute('aria-current')});
+      document.getElementById('pageTitle').textContent=titles[page];
+      if(location.hash!=='#'+page)location.hash=page;
+      if(window.innerWidth<992){const menu=document.getElementById('mainMenu');const instance=bootstrap.Offcanvas.getInstance(menu);if(instance)instance.hide()}
+      window.scrollTo(0,0);
+    }
+    document.querySelectorAll('[data-page],[data-go]').forEach(el=>el.addEventListener('click',event=>{event.preventDefault();show(el.dataset.page||el.dataset.go)}));
+    window.addEventListener('hashchange',()=>show(titles[location.hash.slice(1)]?location.hash.slice(1):'beranda'));
+    show(titles[location.hash.slice(1)]?location.hash.slice(1):'beranda');
+  </script>
+</body>
+</html>

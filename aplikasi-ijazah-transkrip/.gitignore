@@ -1,0 +1,8 @@
+/vendor/
+/storage/*.sqlite
+/storage/*.sqlite-*
+/storage/documents/*
+!/storage/documents/.gitkeep
+/storage/imports/*
+!/storage/imports/.gitkeep
+/config.local.php
