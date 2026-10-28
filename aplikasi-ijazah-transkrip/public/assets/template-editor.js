@@ -14,12 +14,25 @@
   const qrNote = document.getElementById('qr-preview-note');
   const positionSelect = document.getElementById('position-field-select');
   const positionPanels = [...form.querySelectorAll('[data-field-panel]')];
+  const inspectorEmpty = document.getElementById('inspector-empty');
+  const inspectorBody = document.getElementById('inspector-body');
+  const inspectorLabel = document.getElementById('inspector-label');
+  const inspectorWidthLabel = document.getElementById('inspector-width-label');
+  const inspectorQrNote = document.getElementById('inspector-qr-note');
+  const inspectInputs = [...document.querySelectorAll('[data-inspect]')];
+  const alignButtons = [...document.querySelectorAll('#field-inspector [data-align]')];
+  const inspectWrap = (name) => document.querySelector(`[data-inspect-wrap="${name}"]`);
+  const resetButton = document.getElementById('reset-changes');
+  const dirtyStatus = document.getElementById('dirty-status');
+  const labelInput = form.elements.namedItem('label');
   const mmPx = 96 / 25.4;
   let scale = 1;
   let zoomed = false;
   let timer;
   let request;
   let generation = 0;
+  let selectedNode = null;
+  let leaving = false;
 
   const fieldInput = (key, part) => form.elements.namedItem(`field[${key}][${part}]`);
   const qrInput = (part) => form.elements.namedItem(`qr[${part}]`);
@@ -27,6 +40,59 @@
     const value = Number.parseFloat(input?.value ?? '');
     return Number.isFinite(value) ? value : fallback;
   };
+
+  // Nama versi dan token CSRF tidak dihitung sebagai perubahan template.
+  const serializeForm = () => {
+    const data = new FormData(form);
+    data.delete('label');
+    data.delete('csrf');
+    return new URLSearchParams(data).toString();
+  };
+  const initialState = serializeForm();
+
+  function updateDirty() {
+    const dirty = serializeForm() !== initialState;
+    if (resetButton) resetButton.disabled = !dirty;
+    if (dirtyStatus) {
+      dirtyStatus.textContent = dirty ? 'Ada perubahan yang belum disimpan.' : 'Belum ada perubahan.';
+      dirtyStatus.className = `small ${dirty ? 'text-warning-emphasis fw-semibold' : 'text-secondary'}`;
+    }
+    return dirty;
+  }
+
+  // Input pada panel atas kertas hanya mewakili input formulir milik bidang yang dipilih.
+  function inspectTarget(part) {
+    if (!selectedNode) return null;
+    const key = selectedNode.dataset.field;
+    if (!key) return part === 'w' ? qrInput('size') : ['x', 'y'].includes(part) ? qrInput(part) : null;
+    return part === 'text' ? form.elements.namedItem(`text[${key}]`) : fieldInput(key, part);
+  }
+
+  function syncInspector() {
+    if (!inspectorBody) return;
+    inspectorEmpty.hidden = !!selectedNode;
+    inspectorBody.hidden = !selectedNode;
+    if (!selectedNode) return;
+    const isQr = !selectedNode.dataset.field;
+    const hasText = !!inspectTarget('text');
+    inspectorLabel.textContent = isQr ? 'Area QR' : selectedNode.dataset.emptyLabel;
+    inspectorWidthLabel.textContent = isQr ? 'Ukuran (mm)' : 'Lebar (mm)';
+    inspectWrap('pt').hidden = isQr;
+    inspectWrap('align').hidden = isQr;
+    inspectWrap('text').hidden = isQr || !hasText;
+    inspectWrap('auto').hidden = isQr || hasText;
+    inspectWrap('qr').hidden = !isQr;
+    inspectInputs.forEach((input) => {
+      const target = inspectTarget(input.dataset.inspect);
+      if (target && input !== document.activeElement) input.value = target.value;
+    });
+    const align = isQr ? '' : fieldInput(selectedNode.dataset.field, 'align')?.value;
+    alignButtons.forEach((button) => {
+      const active = button.dataset.align === align;
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-pressed', String(active));
+    });
+  }
 
   function resizeSheet() {
     if (!stage || !sheet) return;
@@ -74,14 +140,16 @@
         .map((node) => node.dataset.emptyLabel);
       qrNode.classList.toggle('canvas-qr-warning', collisions.length > 0);
       if (qrNote) {
-        qrNote.textContent = collisions.length
-          ? `Area QR beririsan dengan ${collisions.join(', ')}. Geser atau perkecil area QR.`
-          : enabled
-            ? 'QR aktif: area ini akan dicetak pada ijazah final.'
-            : 'Lokasi QR disiapkan sebagai panduan; QR belum akan dicetak pada ijazah final.';
-        qrNote.className = `small mb-2 ${collisions.length ? 'text-danger' : 'text-secondary'}`;
+        qrNote.textContent = collisions.length ? `Area QR beririsan dengan ${collisions.join(', ')}. Geser atau perkecil area QR.` : '';
+        qrNote.hidden = !collisions.length;
+      }
+      if (inspectorQrNote) {
+        inspectorQrNote.textContent = enabled
+          ? 'QR aktif: area ini akan dicetak pada ijazah final.'
+          : 'QR belum dicetak pada ijazah final. Centang "Cetak QR pada ijazah final" di formulir setelah posisinya disetujui.';
       }
     }
+    syncInspector();
   }
 
   async function loadTranscriptPreview() {
@@ -115,8 +183,7 @@
 
   function schedulePreview() {
     if (!isTranscript) {
-      status.textContent = 'Tampilan teks sesuai perubahan saat ini';
-      status.className = 'small text-success';
+      status.textContent = '';
       return;
     }
     clearTimeout(timer);
@@ -132,7 +199,7 @@
 
   function updateAlignmentFeedback(node) {
     if (!alignmentStatus || !node?.dataset.field) {
-      if (alignmentStatus) alignmentStatus.textContent = 'Pilih teks untuk memeriksa posisi tengah.';
+      if (alignmentStatus) alignmentStatus.textContent = '';
       grid?.classList.remove('center-active');
       return;
     }
@@ -146,21 +213,17 @@
     alignmentStatus.textContent = centered
       ? textCentered ? '✓ Teks tepat di tengah halaman.' : 'Area tepat di tengah; pilih perataan Tengah agar teks ikut rata tengah.'
       : `Belum di tengah: selisih ${offset.toFixed(1).replace('.', ',')} mm.`;
-    alignmentStatus.className = `small mb-3 ${centered && textCentered ? 'text-success fw-semibold' : 'text-secondary'}`;
+    alignmentStatus.className = `small ${centered && textCentered ? 'text-success fw-semibold' : 'text-secondary'}`;
   }
 
   function selectNode(node) {
     sheet?.querySelectorAll('.canvas-selected, .canvas-centered').forEach((item) => item.classList.remove('canvas-selected', 'canvas-centered'));
     node.classList.add('canvas-selected');
+    selectedNode = node;
     const key = node.dataset.field;
-    if (key) {
-      showPositionPanel(key);
-      status.textContent = `Dipilih: ${node.dataset.emptyLabel}`;
-      updateAlignmentFeedback(node);
-    } else {
-      status.textContent = 'Dipilih: area QR';
-      updateAlignmentFeedback(null);
-    }
+    if (key) showPositionPanel(key);
+    updateAlignmentFeedback(key ? node : null);
+    syncInspector();
   }
 
   function moveNode(node, x, y, snap = false) {
@@ -184,6 +247,7 @@
     renderCanvas();
     schedulePreview();
     updateAlignmentFeedback(node);
+    updateDirty();
   }
 
   if (sheet) {
@@ -242,8 +306,38 @@
     const panel = event.target.closest('[data-field-panel]');
     if (panel) showPositionPanel(panel.dataset.fieldPanel);
   }, true);
-  form.addEventListener('input', (event) => { if (event.target !== positionSelect) { renderCanvas(); schedulePreview(); updateAlignmentFeedback(sheet?.querySelector('.canvas-selected')); } });
-  form.addEventListener('change', (event) => { if (event.target !== positionSelect) { renderCanvas(); schedulePreview(); updateAlignmentFeedback(sheet?.querySelector('.canvas-selected')); } });
+  form.addEventListener('input', (event) => { if (event.target !== positionSelect) { renderCanvas(); schedulePreview(); updateAlignmentFeedback(selectedNode); updateDirty(); } });
+  form.addEventListener('change', (event) => { if (event.target !== positionSelect) { renderCanvas(); schedulePreview(); updateAlignmentFeedback(selectedNode); updateDirty(); } });
+  inspectInputs.forEach((input) => input.addEventListener('input', () => {
+    const target = inspectTarget(input.dataset.inspect);
+    if (!target) return;
+    target.value = input.value;
+    target.dispatchEvent(new Event('input', { bubbles: true }));
+  }));
+  alignButtons.forEach((button) => button.addEventListener('click', () => {
+    const target = inspectTarget('align');
+    if (!target) return;
+    target.value = button.dataset.align;
+    target.dispatchEvent(new Event('change', { bubbles: true }));
+  }));
+  resetButton?.addEventListener('click', () => {
+    if (!confirm('Kembalikan semua isian ke versi aktif? Perubahan yang belum disimpan akan hilang.')) return;
+    const label = labelInput?.value ?? '';
+    form.reset();
+    if (labelInput) labelInput.value = label;
+    if (selectedNode?.dataset.field) showPositionPanel(selectedNode.dataset.field);
+    renderCanvas();
+    schedulePreview();
+    updateAlignmentFeedback(selectedNode);
+    updateDirty();
+  });
+  // Tombol "Buka PDF saat ini" membuka tab baru, jadi perubahan tetap dianggap belum tersimpan.
+  form.addEventListener('submit', (event) => { if (event.submitter?.formTarget !== '_blank') leaving = true; });
+  window.addEventListener('beforeunload', (event) => {
+    if (leaving || !updateDirty()) return;
+    event.preventDefault();
+    event.returnValue = '';
+  });
   gridToggle?.addEventListener('change', () => { grid.hidden = !gridToggle.checked; updateAlignmentFeedback(sheet?.querySelector('.canvas-selected')); });
   document.getElementById('toggle-zoom')?.addEventListener('click', (event) => {
     zoomed = !zoomed;
