@@ -76,9 +76,13 @@ Selama ada dokumen aktif (ijazah atau transkrip), identitas lulusan terkunci. Se
 - Template nilai per mahasiswa berisi NIM dan seluruh mata kuliah kurikulum. Saat dimuat, berkas dengan NIM lain, kode di luar kurikulum, atau huruf di luar skala ditolak. Hasil impor tampil di tabel lebih dahulu dan baru tersimpan setelah **Simpan nilai**.
 - Mengubah kurikulum atau skala tidak mengubah transkrip yang sudah terbit. Nilai mahasiswa memakai kurikulum dan skala terbaru saat nilainya disimpan ulang. Nilai lama yang kodenya tidak lagi ada di kurikulum tampil sebagai **Nilai di luar kurikulum** dan tetap ikut transkrip sampai dihapus.
 
+### Transkrip satu lembar
+
+Transkrip dicetak pada **satu lembar A4 potret** dengan editor yang sama seperti ijazah: judul, nomor, blok identitas, tabel nilai, jumlah SKS, IPK, judul skripsi, tempat dan tanggal, serta dua pejabat (kiri dan kanan) dapat digeser di atas pindaian blanko transkrip. Tabel nilai dibagi dua kolom sama banyak (misalnya 25 di kiri dan 25 di kanan) dan hanya memuat kode, nama mata kuliah, SKS, dan nilai huruf. Jika mata kuliah tidak muat pada **tinggi area** tabel, ukuran hurufnya diperkecil otomatis (paling kecil 5 pt) sehingga transkrip tetap satu lembar; editor menampilkan ukuran huruf yang dipakai. Kosongkan nama dan jabatan salah satu pejabat jika transkrip hanya ditandatangani satu orang. Template transkrip lama otomatis dibaca dengan tata letak baru (penandatangan lama menjadi pejabat kiri).
+
 ### Latar blanko di editor
 
-Pada editor ijazah, tombol **Unggah latar blanko** menerima pindaian/foto blanko kosong (JPG, PNG, atau WebP, lanskap, maks. 10 MB). Gambar direntangkan memenuhi kertas A4 lanskap di bawah teks sehingga posisi bidang dapat dicocokkan dengan kolom isian blanko. Kepekatan latar dapat diatur dan latar dapat disembunyikan. Latar disimpan per program studi di `storage/backgrounds`, tidak ikut versi template, dan **tidak pernah dicetak** pada PDF pratinjau maupun final. Untuk hasil paling akurat, pindai seluruh lembar hingga tepinya tanpa margin atau kemiringan.
+Pada editor ijazah dan transkrip, tombol **Unggah latar blanko** menerima pindaian/foto blanko kosong (JPG, PNG, atau WebP, maks. 10 MB; lanskap untuk ijazah, potret untuk transkrip). Gambar direntangkan memenuhi kertas A4 di bawah teks sehingga posisi bidang dapat dicocokkan dengan kolom isian blanko. Kepekatan latar dapat diatur dan latar dapat disembunyikan. Latar disimpan per program studi di `storage/backgrounds`, tidak ikut versi template, dan **tidak pernah dicetak** pada PDF pratinjau maupun final. Untuk hasil paling akurat, pindai seluruh lembar hingga tepinya tanpa margin atau kemiringan.
 
 ### QR pada blanko
 
@@ -103,7 +107,7 @@ Impor lulusan maksimal 5 MB dan 10.000 baris per berkas. Impor mempratinjau kesa
 ## Batas saat ini
 
 - Aturan nilai ulang, transfer, predikat, dan pembulatan IPK STIE belum diberikan. Karena itu, data nilai yang dipakai untuk transkrip harus merupakan **daftar akhir** dari sistem akademik dan total/IPK resmi harus cocok dengan hasil hitung aplikasi. Predikat belum dicetak.
-- Logo dan header transkrip resmi belum tersedia. Header teks, alamat, serta pejabat bisa diatur Admin; cetak final harus ditinjau kampus.
+- Logo dan kop kampus tidak dicetak; ijazah dan transkrip dicetak di atas blanko atau kertas berkop. Posisi setiap bagian perlu dikalibrasi dengan blanko asli.
 - Posisi cetak ijazah berasal dari acuan sampel, **belum terkalibrasi dengan blanko kosong dan printer kampus**.
 - Aplikasi menggunakan SQLite untuk instalasi mandiri kecil. Untuk hosting banyak petugas atau beban tinggi, migrasi database dan backup operasional perlu disiapkan.
 - Tidak ada integrasi otomatis PISN/PDDikti. Nomor ijazah nasional diisi dari sumber resmi.

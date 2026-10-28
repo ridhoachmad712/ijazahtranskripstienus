@@ -125,21 +125,28 @@ try {
         imagedestroy($image);
         return $path;
     };
-    expect(template_background_path('AKUNTANSI') === null, 'Latar blanko tidak boleh ada sebelum diunggah.');
-    expect(save_template_background('AKUNTANSI', $makeImage($root . '/latar.png', 1169, 827)) === null, 'Latar A4 lanskap tidak boleh diberi peringatan rasio.');
-    expect(str_ends_with((string) template_background_path('AKUNTANSI'), 'diploma-AKUNTANSI.png') && template_background_path('MANAJEMEN') === null, 'Latar blanko tersimpan pada prodi yang salah.');
-    expect(save_template_background('AKUNTANSI', $makeImage($root . '/latar-lebar.png', 1400, 700)) !== null, 'Latar dengan rasio berbeda harus diberi peringatan.');
+    expect(template_background_path('diploma', 'AKUNTANSI') === null, 'Latar blanko tidak boleh ada sebelum diunggah.');
+    expect(save_template_background('diploma', 'AKUNTANSI', $makeImage($root . '/latar.png', 1169, 827)) === null, 'Latar A4 lanskap tidak boleh diberi peringatan rasio.');
+    expect(str_ends_with((string) template_background_path('diploma', 'AKUNTANSI'), 'diploma-AKUNTANSI.png') && template_background_path('diploma', 'MANAJEMEN') === null, 'Latar blanko tersimpan pada prodi yang salah.');
+    expect(save_template_background('diploma', 'AKUNTANSI', $makeImage($root . '/latar-lebar.png', 1400, 700)) !== null, 'Latar dengan rasio berbeda harus diberi peringatan.');
     foreach (['potret' => $makeImage($root . '/latar-potret.png', 827, 1169), 'bukan gambar' => $root . '/import-bukan-gambar.txt'] as $label => $path) {
         if (!is_file($path)) file_put_contents($path, 'bukan gambar');
         try {
-            save_template_background('AKUNTANSI', $path);
+            save_template_background('diploma', 'AKUNTANSI', $path);
             throw new RuntimeException('Latar ' . $label . ' seharusnya ditolak.');
         } catch (DomainException) {
         }
     }
     expect(!str_contains(render_diploma_html(sample_template_snapshot(active_template('diploma', 'AKUNTANSI')), null, true), 'sheet-background'), 'Latar blanko tidak boleh masuk ke PDF.');
-    delete_template_background('AKUNTANSI');
-    expect(template_background_path('AKUNTANSI') === null, 'Latar blanko belum terhapus.');
+    expect(save_template_background('transcript', 'AKUNTANSI', $makeImage($root . '/latar-transkrip.png', 827, 1169)) === null && str_ends_with((string) template_background_path('transcript', 'AKUNTANSI'), 'transcript-AKUNTANSI.png'), 'Latar transkrip potret harus diterima.');
+    try {
+        save_template_background('transcript', 'AKUNTANSI', $root . '/latar.png');
+        throw new RuntimeException('Latar transkrip lanskap seharusnya ditolak.');
+    } catch (DomainException) {
+    }
+    delete_template_background('transcript', 'AKUNTANSI');
+    delete_template_background('diploma', 'AKUNTANSI');
+    expect(template_background_path('diploma', 'AKUNTANSI') === null, 'Latar blanko belum terhapus.');
     $previewTemplate = active_template('diploma', 'AKUNTANSI');
     $previewSource = ['text'=>$previewTemplate['settings']['texts'], 'field'=>$previewTemplate['settings']['fields'], 'qr'=>$previewTemplate['settings']['qr']];
     $previewSource['text']['opening'] = 'Redaksi pratinjau yang belum disimpan';
@@ -158,10 +165,10 @@ try {
     $savedQr = active_template('diploma', 'MANAJEMEN');
     expect((int) $savedQr['version'] === 2 && (float) $savedQr['settings']['qr']['x'] === 24.0 && (float) $savedQr['settings']['qr']['y'] === 28.0 && (float) $savedQr['settings']['qr']['size'] === 25.0 && !$savedQr['settings']['qr']['enabled'], 'Lokasi QR tidak tersimpan saat pencetakan belum aktif.');
     $transcriptTemplate = active_template('transcript', 'AKUNTANSI');
-    $transcriptSource = $transcriptTemplate['settings'];
-    $transcriptSource['title'] = 'JUDUL TRANSKRIP PRATINJAU';
+    $transcriptSource = ['text'=>$transcriptTemplate['settings']['texts'], 'field'=>$transcriptTemplate['settings']['fields'], 'show_thesis'=>'1'];
+    $transcriptSource['text']['title'] = 'JUDUL TRANSKRIP PRATINJAU';
     $transcriptSettings = template_settings_from_source($transcriptTemplate, $transcriptSource);
-    expect(str_contains(render_transcript_browser_html(sample_template_snapshot(array_replace($transcriptTemplate, ['settings'=>$transcriptSettings]))), 'JUDUL TRANSKRIP PRATINJAU'), 'Pratinjau transkrip tidak mengikuti isian.');
+    expect(str_contains(render_transcript_html(sample_template_snapshot(array_replace($transcriptTemplate, ['settings'=>$transcriptSettings])), true), 'JUDUL TRANSKRIP PRATINJAU'), 'Pratinjau transkrip tidak mengikuti isian.');
     foreach (['diploma','transcript'] as $kind) {
         $template = active_template($kind, 'AKUNTANSI');
         $settings = $template['settings'];
@@ -171,7 +178,7 @@ try {
             $settings['texts']['program_accreditation'] = 'Akreditasi prodi contoh untuk pengujian';
             $settings['qr'] = ['enabled'=>true,'x'=>12,'y'=>13,'size'=>22];
         } else {
-            $settings['signer_name'] = 'Pejabat Transkrip';
+            $settings['texts']['left_name'] = 'Pejabat Transkrip';
         }
         db()->prepare('UPDATE templates SET settings_json=? WHERE id=?')->execute([json_encode($settings, JSON_UNESCAPED_UNICODE), $template['id']]);
     }
@@ -245,6 +252,20 @@ try {
     $longDoc = find_document(issue_document($longId,'transcript'));
     expect(str_starts_with((string) file_get_contents(document_pdf_file($longDoc)), '%PDF'), 'PDF transkrip panjang tidak terbentuk.');
     expect($longDoc['pdf_path'] === 'documents/' . $longDoc['id'] . '.pdf', 'Lokasi PDF arsip harus relatif terhadap folder storage.');
+
+    // Transkrip satu lembar: tabel dua kolom, huruf menyesuaikan, template lama tetap terbaca.
+    $pageCount = static fn(string $pdf) => preg_match_all('#/Type\s*/Page[^s]#', $pdf);
+    expect($pageCount((string) file_get_contents(document_pdf_file($longDoc))) === 1, 'Transkrip 60 mata kuliah harus tetap satu lembar.');
+    $longSnapshot = json_decode($longDoc['snapshot_json'], true);
+    expect(transcript_block_html($longSnapshot)['grades_pt'] < 9, 'Huruf tabel nilai harus diperkecil saat mata kuliah sangat banyak.');
+    $fifty = array_map(static fn($i) => ['course_code'=>sprintf('K%02d', $i), 'course_name'=>'Mata Kuliah ' . $i, 'credits'=>3, 'grade_letter'=>'A', 'grade_weight'=>4], range(1, 50));
+    [$gradesHtml, $gradesPt] = transcript_grades_html($fifty, default_transcript_settings('AKUNTANSI')['fields']['grades']);
+    expect(substr_count($gradesHtml, '<table class="tr-grades">') === 2 && substr_count($gradesHtml, '<tr><td class="g-code">K') === 50 && strpos($gradesHtml, 'K25') < strpos($gradesHtml, 'K26') && $gradesPt === 9.0, 'Tabel nilai harus dua kolom 25 dan 25 tanpa diperkecil.');
+    $leftTable = substr($gradesHtml, 0, strpos($gradesHtml, '<td class="g-gap">'));
+    expect(str_contains($leftTable, '>K25<') && !str_contains($leftTable, '>K26<'), 'Kolom kiri harus berisi 25 mata kuliah pertama.');
+    expect(!str_contains($gradesHtml, 'Mutu') && str_contains($gradesHtml, '<th class="g-code">Kode</th><th class="g-name">Mata Kuliah</th><th class="g-sks">SKS</th><th class="g-grade">Nilai</th>'), 'Tabel nilai hanya berisi kode, mata kuliah, SKS, dan nilai.');
+    $legacy = normalized_template_settings('transcript', 'AKUNTANSI', ['title'=>'TRANSKRIP AKADEMIK','signer_role'=>'Ketua','signer_name'=>'Dr. Lama','signer_nidn'=>'NIDN 1','issue_place'=>'Gowa','show_thesis'=>false,'institution'=>'X']);
+    expect($legacy['texts']['title'] === 'TRANSKRIP AKADEMIK' && $legacy['texts']['left_role'] === 'Ketua,' && $legacy['texts']['left_name'] === 'Dr. Lama' && $legacy['texts']['right_role'] === '' && $legacy['show_thesis'] === false && isset($legacy['fields']['grades']) && !isset($legacy['institution']), 'Template transkrip lama tidak termigrasi ke tata letak baru.');
 
     // Paket perbaikan cepat: hapus lulusan, paginasi, SKS bulat, tempat terbit, pratinjau impor.
     try {

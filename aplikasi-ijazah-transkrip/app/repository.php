@@ -55,22 +55,57 @@ function default_diploma_settings(string $program): array
     ];
 }
 
+// Transkrip satu lembar A4 potret; posisi setiap bagian diatur seperti ijazah (mm dari pojok kiri atas).
 function default_transcript_settings(string $program): array
 {
     return [
-        'institution' => 'SEKOLAH TINGGI ILMU EKONOMI NUSANTARA MAKASSAR',
-        'address' => '',
-        'title' => 'TRANSKRIP NILAI',
-        'program_label' => programs()[$program]['label'],
-        'accreditation' => '',
-        'signer_role' => 'Ketua STIE Nusantara Makassar',
-        'signer_name' => '',
-        'signer_nidn' => '',
-        'issue_place' => 'Makassar',
+        'texts' => [
+            'title' => 'TRANSKRIP NILAI',
+            'program_accreditation' => '',
+            'issue_place' => 'Makassar',
+            'left_role' => 'Ketua STIE Nusantara Makassar,',
+            'right_role' => 'Wakil Ketua Bidang Akademik,',
+            'left_name' => '',
+            'right_name' => '',
+            'left_nidn' => '',
+            'right_nidn' => '',
+        ],
+        'fields' => [
+            'title' => ['label'=>'Judul','x'=>20,'y'=>38,'w'=>170,'pt'=>15,'align'=>'center'],
+            'number' => ['label'=>'Nomor transkrip','x'=>20,'y'=>45,'w'=>170,'pt'=>10,'align'=>'center'],
+            'identity' => ['label'=>'Identitas lulusan','x'=>15,'y'=>53,'w'=>180,'pt'=>9.5,'align'=>'left'],
+            'program_accreditation' => ['label'=>'Akreditasi prodi','x'=>15,'y'=>69,'w'=>180,'pt'=>9,'align'=>'left'],
+            'grades' => ['label'=>'Tabel nilai','x'=>12,'y'=>75,'w'=>186,'pt'=>9,'align'=>'left','h'=>150],
+            'total_credits' => ['label'=>'Jumlah SKS','x'=>12,'y'=>228,'w'=>80,'pt'=>9.5,'align'=>'left'],
+            'gpa' => ['label'=>'IPK','x'=>100,'y'=>228,'w'=>98,'pt'=>9.5,'align'=>'left'],
+            'thesis' => ['label'=>'Judul skripsi','x'=>12,'y'=>234,'w'=>186,'pt'=>9,'align'=>'left'],
+            'issue' => ['label'=>'Tempat dan tanggal','x'=>112,'y'=>246,'w'=>86,'pt'=>10,'align'=>'center'],
+            'left_role' => ['label'=>'Jabatan kiri','x'=>12,'y'=>251,'w'=>86,'pt'=>10,'align'=>'center'],
+            'right_role' => ['label'=>'Jabatan kanan','x'=>112,'y'=>251,'w'=>86,'pt'=>10,'align'=>'center'],
+            'left_name' => ['label'=>'Nama pejabat kiri','x'=>12,'y'=>275,'w'=>86,'pt'=>10,'align'=>'center'],
+            'right_name' => ['label'=>'Nama pejabat kanan','x'=>112,'y'=>275,'w'=>86,'pt'=>10,'align'=>'center'],
+            'left_nidn' => ['label'=>'NIDN kiri','x'=>12,'y'=>280,'w'=>86,'pt'=>9,'align'=>'center'],
+            'right_nidn' => ['label'=>'NIDN kanan','x'=>112,'y'=>280,'w'=>86,'pt'=>9,'align'=>'center'],
+        ],
         'show_thesis' => true,
     ];
 }
 
+function page_size(string $kind): array
+{
+    return $kind === 'diploma' ? ['w'=>297, 'h'=>210, 'label'=>'A4 lanskap'] : ['w'=>210, 'h'=>297, 'label'=>'A4 potret'];
+}
+
+// Template transkrip sebelum tata letak berposisi: satu penandatangan dan header teks.
+function legacy_transcript_settings(array $saved): array
+{
+    $texts = ['right_role'=>'', 'right_name'=>'', 'right_nidn'=>''];
+    foreach (['title'=>'title', 'accreditation'=>'program_accreditation', 'issue_place'=>'issue_place', 'signer_role'=>'left_role', 'signer_name'=>'left_name', 'signer_nidn'=>'left_nidn'] as $old => $new) {
+        if (trim((string) ($saved[$old] ?? '')) !== '') $texts[$new] = trim((string) $saved[$old]);
+    }
+    if (isset($texts['left_role']) && !str_ends_with($texts['left_role'], ',')) $texts['left_role'] .= ',';
+    return ['texts'=>$texts, 'show_thesis'=>(bool) ($saved['show_thesis'] ?? true)];
+}
 function seed_templates(PDO $db): void
 {
     $count = (int) $db->query('SELECT COUNT(*) FROM templates')->fetchColumn();
@@ -446,42 +481,43 @@ function template_by_id(int $id): ?array
 function normalized_template_settings(string $kind, string $program, array $saved): array
 {
     $defaults = $kind === 'diploma' ? default_diploma_settings($program) : default_transcript_settings($program);
+    if ($kind === 'transcript' && !isset($saved['fields'])) $saved = legacy_transcript_settings($saved);
     return array_replace_recursive($defaults, $saved);
 }
 
 function template_settings_from_source(array $current, array $source): array
 {
     $settings = $current['settings'];
-    $kind = $current['kind'];
-    if ($kind === 'diploma') {
-        foreach ($settings['texts'] as $key => $_) $settings['texts'][$key] = trim((string) ($source['text'][$key] ?? ''));
-        foreach ($settings['fields'] as $key => $field) {
-            foreach (['x','y','w','pt'] as $part) {
-                $value = filter_var($source['field'][$key][$part] ?? null, FILTER_VALIDATE_FLOAT);
-                $max = $part === 'y' ? 210 : ($part === 'pt' ? 48 : 297);
-                if ($value === false || $value < 0 || $value > $max || ($part === 'w' && $value < 10) || ($part === 'pt' && $value < 6)) throw new DomainException('Posisi atau ukuran bidang ' . $key . ' tidak valid.');
-                $settings['fields'][$key][$part] = (float) $value;
-            }
-            if ($settings['fields'][$key]['x'] + $settings['fields'][$key]['w'] > 297) throw new DomainException('Bidang ' . $key . ' melewati tepi kanan blanko.');
-            $align = (string) ($source['field'][$key]['align'] ?? 'center');
-            if (!in_array($align, ['left','center','right'], true)) throw new DomainException('Perataan teks tidak valid.');
-            $settings['fields'][$key]['align'] = $align;
+    $page = page_size($current['kind']);
+    foreach ($settings['texts'] as $key => $_) $settings['texts'][$key] = trim((string) ($source['text'][$key] ?? ''));
+    foreach ($settings['fields'] as $key => $field) {
+        foreach (array_key_exists('h', $field) ? ['x','y','w','pt','h'] : ['x','y','w','pt'] as $part) {
+            $value = filter_var($source['field'][$key][$part] ?? null, FILTER_VALIDATE_FLOAT);
+            $max = match ($part) { 'y', 'h' => $page['h'], 'pt' => 48, default => $page['w'] };
+            $min = match ($part) { 'w', 'h' => 10, 'pt' => 5, default => 0 };
+            if ($value === false || $value < $min || $value > $max) throw new DomainException('Posisi atau ukuran bidang ' . $field['label'] . ' tidak valid.');
+            $settings['fields'][$key][$part] = (float) $value;
         }
+        if ($settings['fields'][$key]['x'] + $settings['fields'][$key]['w'] > $page['w']) throw new DomainException('Bidang ' . $field['label'] . ' melewati tepi kanan kertas.');
+        if (isset($settings['fields'][$key]['h']) && $settings['fields'][$key]['y'] + $settings['fields'][$key]['h'] > $page['h']) throw new DomainException('Bidang ' . $field['label'] . ' melewati tepi bawah kertas.');
+        $align = (string) ($source['field'][$key]['align'] ?? 'center');
+        if (!in_array($align, ['left','center','right'], true)) throw new DomainException('Perataan teks tidak valid.');
+        $settings['fields'][$key]['align'] = $align;
+    }
+    if (isset($settings['qr'])) {
         $settings['qr']['enabled'] = isset($source['qr_enabled']);
         foreach (['x','y','size'] as $part) {
             $value = filter_var($source['qr'][$part] ?? null, FILTER_VALIDATE_FLOAT);
-            if ($value === false || $value < 0 || $value > ($part === 'y' ? 210 : 297)) throw new DomainException('Posisi QR tidak valid.');
+            if ($value === false || $value < 0 || $value > ($part === 'y' ? $page['h'] : $page['w'])) throw new DomainException('Posisi QR tidak valid.');
             $settings['qr'][$part] = (float) $value;
         }
-        if ($settings['qr']['size'] < 15 || $settings['qr']['size'] > 40 || $settings['qr']['x'] + $settings['qr']['size'] > 297 || $settings['qr']['y'] + $settings['qr']['size'] > 210) throw new DomainException('Ukuran atau posisi QR melewati blanko.');
-    } else {
-        foreach ($settings as $key => $value) {
-            $settings[$key] = is_bool($value) ? isset($source[$key]) : trim((string) ($source[$key] ?? ''));
-        }
+        if ($settings['qr']['size'] < 15 || $settings['qr']['size'] > 40 || $settings['qr']['x'] + $settings['qr']['size'] > $page['w'] || $settings['qr']['y'] + $settings['qr']['size'] > $page['h']) throw new DomainException('Ukuran atau posisi QR melewati blanko.');
+    }
+    foreach ($settings as $key => $value) {
+        if (is_bool($value)) $settings[$key] = isset($source[$key]);
     }
     return $settings;
 }
-
 function save_template_version(string $kind, string $program, array $source): int
 {
     $current = active_template($kind, $program);
@@ -514,19 +550,20 @@ function template_background_dir(): string
     return rtrim((string) app_config()['storage_root'], '/\\') . '/backgrounds';
 }
 
-function template_background_path(string $program): ?string
+function template_background_path(string $kind, string $program): ?string
 {
-    if (!array_key_exists($program, programs())) return null;
+    if (!in_array($kind, ['diploma','transcript'], true) || !array_key_exists($program, programs())) return null;
     foreach (TEMPLATE_BACKGROUND_TYPES as $extension) {
-        $path = template_background_dir() . '/diploma-' . $program . '.' . $extension;
+        $path = template_background_dir() . '/' . $kind . '-' . $program . '.' . $extension;
         if (is_file($path)) return $path;
     }
     return null;
 }
 
-function save_template_background(string $program, string $sourcePath): ?string
+function save_template_background(string $kind, string $program, string $sourcePath): ?string
 {
-    if (!array_key_exists($program, programs())) throw new DomainException('Program studi tidak dikenal.');
+    if (!in_array($kind, ['diploma','transcript'], true) || !array_key_exists($program, programs())) throw new DomainException('Template tidak dikenal.');
+    $page = page_size($kind);
     $size = is_file($sourcePath) ? filesize($sourcePath) : false;
     if ($size === false || $size === 0) throw new DomainException('Pilih gambar blanko yang akan diunggah.');
     if ($size > TEMPLATE_BACKGROUND_MAX_BYTES) throw new DomainException('Ukuran gambar latar maksimal 10 MB.');
@@ -534,27 +571,27 @@ function save_template_background(string $program, string $sourcePath): ?string
     $extension = TEMPLATE_BACKGROUND_TYPES[$info['mime'] ?? ''] ?? null;
     if (!$info || $extension === null) throw new DomainException('Gunakan gambar JPG, PNG, atau WebP.');
     [$width, $height] = $info;
-    if ($width <= $height) throw new DomainException('Gunakan gambar lanskap (lebar lebih besar dari tinggi), sesuai blanko ijazah.');
-    if ($width < 800 || $height < 560) throw new DomainException('Resolusi gambar terlalu kecil. Pindai blanko minimal 100 dpi.');
+    if ($page['w'] > $page['h'] ? $width <= $height : $height <= $width) throw new DomainException($kind === 'diploma' ? 'Gunakan gambar lanskap (lebar lebih besar dari tinggi), sesuai blanko ijazah.' : 'Gunakan gambar potret (tinggi lebih besar dari lebar), sesuai blanko transkrip.');
+    if (min($width, $height) < 560 || max($width, $height) < 800) throw new DomainException('Resolusi gambar terlalu kecil. Pindai blanko minimal 100 dpi.');
     $directory = template_background_dir();
     if (!is_dir($directory) && !mkdir($directory, 0770, true) && !is_dir($directory)) throw new RuntimeException('Direktori latar tidak dapat dibuat.');
-    $old = template_background_path($program);
-    $target = $directory . '/diploma-' . $program . '.' . $extension;
+    $old = template_background_path($kind, $program);
+    $target = $directory . '/' . $kind . '-' . $program . '.' . $extension;
     $temporary = $target . '.tmp';
     if (!copy($sourcePath, $temporary)) throw new RuntimeException('Gambar latar gagal disimpan.');
     if ($old !== null && $old !== $target) unlink($old);
     if (!rename($temporary, $target)) throw new RuntimeException('Gambar latar gagal disimpan.');
-    audit('template', null, 'background_uploaded', 'diploma:' . $program);
-    $ratio = ($width / $height) / (297 / 210);
-    return abs($ratio - 1) > 0.03 ? 'Perbandingan ukuran gambar berbeda dari A4 lanskap, jadi gambar direntangkan agar pas. Pastikan pindaian mencakup seluruh tepi blanko.' : null;
+    audit('template', null, 'background_uploaded', $kind . ':' . $program);
+    $ratio = ($width / $height) / ($page['w'] / $page['h']);
+    return abs($ratio - 1) > 0.03 ? 'Perbandingan ukuran gambar berbeda dari ' . $page['label'] . ', jadi gambar direntangkan agar pas. Pastikan pindaian mencakup seluruh tepi blanko.' : null;
 }
 
-function delete_template_background(string $program): void
+function delete_template_background(string $kind, string $program): void
 {
-    $path = template_background_path($program);
+    $path = template_background_path($kind, $program);
     if ($path === null) return;
     unlink($path);
-    audit('template', null, 'background_deleted', 'diploma:' . $program);
+    audit('template', null, 'background_deleted', $kind . ':' . $program);
 }
 
 function documents_for(int $graduateId): array
@@ -615,7 +652,7 @@ function issue_document(int $graduateId, string $kind): int
     if ($kind === 'transcript') {
         if (official_totals_match(grade_summary($grades), $graduate) === false) throw new DomainException('Jumlah SKS/IPK resmi tidak cocok dengan nilai mata kuliah. Periksa kembali data dan aturan nilai.');
     }
-    if ($kind === 'transcript' && ($template['settings']['signer_name'] ?? '') === '') throw new DomainException('Nama penandatangan transkrip belum diisi di template.');
+    if ($kind === 'transcript' && trim((string) ($template['settings']['texts']['left_name'] ?? '')) === '' && trim((string) ($template['settings']['texts']['right_name'] ?? '')) === '') throw new DomainException('Nama penandatangan transkrip belum diisi di template.');
     if ($kind === 'diploma' && (($template['settings']['texts']['left_name'] ?? '') === '' || ($template['settings']['texts']['right_name'] ?? '') === '')) throw new DomainException('Nama kedua penandatangan ijazah belum diisi di template.');
     if ($kind === 'diploma' && trim((string) ($template['settings']['texts']['program_accreditation'] ?? '')) === '') throw new DomainException('Redaksi akreditasi program studi belum diisi di template ijazah.');
     if ($kind === 'diploma' && !empty($template['settings']['qr']['enabled']) && ($problem = qr_base_url_problem((string) app_config()['base_url'])) !== null) throw new DomainException($problem . ' Ijazah dengan QR belum dapat diterbitkan.');

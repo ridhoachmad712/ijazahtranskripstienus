@@ -3,8 +3,6 @@
   if (!form) return;
 
   const status = document.getElementById('preview-status');
-  const frame = document.getElementById('live-pdf');
-  const isTranscript = form.dataset.kind === 'transcript';
   const stage = document.getElementById('preview-stage');
   const sheet = document.getElementById('diploma-sheet');
   const grid = sheet?.querySelector('.sheet-grid');
@@ -19,6 +17,7 @@
   const inspectorLabel = document.getElementById('inspector-label');
   const inspectorWidthLabel = document.getElementById('inspector-width-label');
   const inspectorQrNote = document.getElementById('inspector-qr-note');
+  const inspectorFitNote = document.getElementById('inspector-fit-note');
   const inspectInputs = [...document.querySelectorAll('[data-inspect]')];
   const alignButtons = [...document.querySelectorAll('#field-inspector [data-align]')];
   const inspectWrap = (name) => document.querySelector(`[data-inspect-wrap="${name}"]`);
@@ -26,11 +25,10 @@
   const dirtyStatus = document.getElementById('dirty-status');
   const labelInput = form.elements.namedItem('label');
   const mmPx = 96 / 25.4;
+  const pageW = Number(sheet?.dataset.pageW) || 297;
+  const pageH = Number(sheet?.dataset.pageH) || 210;
   let scale = 1;
   let zoomed = false;
-  let timer;
-  let request;
-  let generation = 0;
   let selectedNode = null;
   let leaving = false;
 
@@ -79,14 +77,24 @@
     inspectorWidthLabel.textContent = isQr ? 'Ukuran (mm)' : 'Lebar (mm)';
     inspectWrap('pt').hidden = isQr;
     inspectWrap('align').hidden = isQr;
+    const key = selectedNode.dataset.field;
     inspectWrap('text').hidden = isQr || !hasText;
     inspectWrap('auto').hidden = isQr || hasText;
     inspectWrap('qr').hidden = !isQr;
+    inspectWrap('h').hidden = isQr || !fieldInput(key, 'h');
+    inspectWrap('fit').hidden = !selectedNode.dataset.fit;
+    if (selectedNode.dataset.fit && inspectorFitNote) {
+      const wanted = numberValue(fieldInput(key, 'pt'), 9);
+      const used = Number(selectedNode.dataset.fitPt || wanted);
+      inspectorFitNote.textContent = used < wanted
+        ? `Agar tetap satu lembar, huruf tabel diperkecil otomatis menjadi ${String(used).replace('.', ',')} pt. Tambah tinggi area jika ingin huruf lebih besar.`
+        : 'Seluruh mata kuliah muat pada ukuran huruf ini.';
+    }
     inspectInputs.forEach((input) => {
       const target = inspectTarget(input.dataset.inspect);
       if (target && input !== document.activeElement) input.value = target.value;
     });
-    const align = isQr ? '' : fieldInput(selectedNode.dataset.field, 'align')?.value;
+    const align = isQr ? '' : fieldInput(key, 'align')?.value;
     alignButtons.forEach((button) => {
       const active = button.dataset.align === align;
       button.classList.toggle('active', active);
@@ -96,10 +104,10 @@
 
   function resizeSheet() {
     if (!stage || !sheet) return;
-    const fit = Math.min(1, stage.clientWidth / (297 * mmPx));
+    const fit = Math.min(1, stage.clientWidth / (pageW * mmPx));
     scale = zoomed ? Math.max(fit, 0.78) : fit;
     sheet.style.transform = `scale(${scale})`;
-    stage.style.height = `${zoomed ? Math.min(580, 210 * mmPx * scale) : 210 * mmPx * scale}px`;
+    stage.style.height = `${zoomed ? Math.min(580, pageH * mmPx * scale) : pageH * mmPx * scale}px`;
     stage.style.overflow = zoomed ? 'auto' : 'hidden';
   }
 
@@ -112,17 +120,23 @@
       const width = numberValue(fieldInput(key, 'w'), 10);
       const points = numberValue(fieldInput(key, 'pt'), 12);
       const align = fieldInput(key, 'align')?.value || 'center';
+      const heightInput = fieldInput(key, 'h');
+      Object.assign(node.style, {
+        left: `${x * mmPx}px`, top: `${y * mmPx}px`, width: `${width * mmPx}px`,
+        height: heightInput ? `${numberValue(heightInput, 10) * mmPx}px` : '',
+        fontSize: `${points * 96 / 72}px`, textAlign: align,
+      });
+      if (node.classList.contains('canvas-block')) {
+        if (node.dataset.fit) fitBlock(node, points);
+        return;
+      }
       const textInput = form.elements.namedItem(`text[${key}]`);
       const issuePlace = key === 'issue' ? form.elements.namedItem('text[issue_place]')?.value.trim() : '';
       const value = textInput ? textInput.value.trim()
-        : issuePlace ? node.dataset.fixedText.replace(/^Diberikan di .*?, /, `Diberikan di ${issuePlace}, `) : node.dataset.fixedText;
+        : issuePlace ? node.dataset.fixedText.replace(/^(Diberikan di )?.*?, /, (_, prefix = '') => `${prefix}${issuePlace}, `) : node.dataset.fixedText;
       const empty = !value;
       node.textContent = empty ? `[${node.dataset.emptyLabel} belum diisi]` : value;
       node.classList.toggle('canvas-empty', empty);
-      Object.assign(node.style, {
-        left: `${x * mmPx}px`, top: `${y * mmPx}px`, width: `${width * mmPx}px`,
-        fontSize: `${points * 96 / 72}px`, textAlign: align,
-      });
     });
     if (qrNode) {
       const size = numberValue(qrInput('size'), 22);
@@ -154,44 +168,19 @@
     syncInspector();
   }
 
-  async function loadTranscriptPreview() {
-    if (!isTranscript || !frame) return;
-    const current = ++generation;
-    request?.abort();
-    request = new AbortController();
-    status.textContent = 'Memperbarui pratinjau…';
-    status.className = 'small text-secondary';
-    try {
-      const data = new FormData(form);
-      data.append('preview_format', 'html');
-      const response = await fetch(form.dataset.previewUrl, {
-        method: 'POST', body: data, credentials: 'same-origin',
-        signal: request.signal,
-      });
-      if (!response.ok) throw new Error((await response.text()).trim() || 'Pratinjau gagal dibuat.');
-      const contentType = response.headers.get('content-type') || '';
-      if (!contentType.includes('text/html')) throw new Error('Sesi Admin berakhir. Muat ulang halaman.');
-      const html = await response.text();
-      if (current !== generation) return;
-      frame.srcdoc = html;
-      status.textContent = 'Pratinjau sesuai perubahan saat ini';
-      status.className = 'small text-success';
-    } catch (error) {
-      if (error.name === 'AbortError' || current !== generation) return;
-      status.textContent = error.message;
-      status.className = 'small text-danger';
+  // Sama seperti PDF: huruf tabel diperkecil bertahap sampai seluruh baris muat di tinggi area.
+  function fitBlock(node, points) {
+    let size = points;
+    while (size > 5 && node.scrollHeight > node.clientHeight + 1) {
+      size -= 0.25;
+      node.style.fontSize = `${size * 96 / 72}px`;
     }
+    node.dataset.fitPt = String(size);
+    node.classList.toggle('canvas-overflow', node.scrollHeight > node.clientHeight + 1);
   }
 
   function schedulePreview() {
-    if (!isTranscript) {
-      status.textContent = '';
-      return;
-    }
-    clearTimeout(timer);
-    status.textContent = 'Perubahan belum diperbarui di pratinjau…';
-    status.className = 'small text-secondary';
-    timer = setTimeout(loadTranscriptPreview, 500);
+    if (status) status.textContent = '';
   }
 
   function showPositionPanel(key) {
@@ -207,7 +196,7 @@
     }
     const key = node.dataset.field;
     const center = numberValue(fieldInput(key, 'x')) + numberValue(fieldInput(key, 'w')) / 2;
-    const offset = Math.abs(center - 148.5);
+    const offset = Math.abs(center - pageW / 2);
     const centered = offset < 0.11;
     const textCentered = fieldInput(key, 'align')?.value === 'center';
     grid?.classList.toggle('center-active', centered && !!gridToggle?.checked);
@@ -233,11 +222,11 @@
     const xInput = key ? fieldInput(key, 'x') : qrInput('x');
     const yInput = key ? fieldInput(key, 'y') : qrInput('y');
     const width = key ? numberValue(fieldInput(key, 'w'), 10) : numberValue(qrInput('size'), 22);
-    const height = key ? 1 : width;
-    let clampedX = Math.max(0, Math.min(297 - width, x));
-    let clampedY = Math.max(0, Math.min(210 - height, y));
+    const height = key ? numberValue(fieldInput(key, 'h'), 1) : width;
+    let clampedX = Math.max(0, Math.min(pageW - width, x));
+    let clampedY = Math.max(0, Math.min(pageH - height, y));
     if (snap && gridToggle?.checked) {
-      const centerX = (297 - width) / 2;
+      const centerX = (pageW - width) / 2;
       const gridX = Math.round(clampedX / 10) * 10;
       const gridY = Math.round(clampedY / 10) * 10;
       if (key && Math.abs(clampedX - centerX) <= 3) clampedX = centerX;
@@ -253,7 +242,7 @@
   }
 
   if (sheet) {
-    sheet.querySelectorAll('[data-field]').forEach((node) => {
+    sheet.querySelectorAll('[data-field]:not(.canvas-block)').forEach((node) => {
       const key = node.dataset.field;
       if (!form.elements.namedItem(`text[${key}]`)) node.dataset.fixedText = node.textContent;
     });
@@ -394,6 +383,5 @@
     event.currentTarget.setAttribute('aria-pressed', String(zoomed));
     resizeSheet();
   });
-  if (isTranscript) loadTranscriptPreview();
-  else schedulePreview();
+  schedulePreview();
 })();
