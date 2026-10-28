@@ -113,7 +113,9 @@
       const points = numberValue(fieldInput(key, 'pt'), 12);
       const align = fieldInput(key, 'align')?.value || 'center';
       const textInput = form.elements.namedItem(`text[${key}]`);
-      const value = textInput ? textInput.value.trim() : node.dataset.fixedText;
+      const issuePlace = key === 'issue' ? form.elements.namedItem('text[issue_place]')?.value.trim() : '';
+      const value = textInput ? textInput.value.trim()
+        : issuePlace ? node.dataset.fixedText.replace(/^Diberikan di .*?, /, `Diberikan di ${issuePlace}, `) : node.dataset.fixedText;
       const empty = !value;
       node.textContent = empty ? `[${node.dataset.emptyLabel} belum diisi]` : value;
       node.classList.toggle('canvas-empty', empty);

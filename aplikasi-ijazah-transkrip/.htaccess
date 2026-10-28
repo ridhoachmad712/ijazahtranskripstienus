@@ -1,0 +1,14 @@
+# Document root seharusnya folder public/. Berkas ini hanya pengaman jika server
+# keliru diarahkan ke folder aplikasi: kode, data, dan konfigurasi tidak boleh terbuka.
+Options -Indexes
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteRule ^(app|bin|docs|storage|tests|vendor|\.git|\.claude)(/|$) - [F,L]
+    RewriteRule ^(config\.local\.php|config\.example\.php|composer\.(json|lock)|README\.md|\.gitignore)$ - [F,L]
+    RewriteRule ^$ public/ [L]
+</IfModule>
+
+<FilesMatch "^(config\.local\.php|composer\.(json|lock))$">
+    Require all denied
+</FilesMatch>

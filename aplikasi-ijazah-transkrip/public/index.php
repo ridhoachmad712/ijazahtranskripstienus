@@ -7,6 +7,8 @@ ini_set('display_errors', '0');
 start_web_session();
 header('X-Content-Type-Options: nosniff');
 header('Referrer-Policy: strict-origin-when-cross-origin');
+header('X-Frame-Options: SAMEORIGIN');
+header("Content-Security-Policy: frame-ancestors 'self'; base-uri 'self'; form-action 'self'; object-src 'none'");
 
 $route = (string) ($_GET['r'] ?? 'dashboard');
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
@@ -32,6 +34,7 @@ try {
             }
             session_regenerate_id(true);
             $_SESSION['admin_id'] = (int) $admin['id'];
+            $_SESSION['last_activity'] = time();
             clear_login_failure($username);
             redirect_to('dashboard');
         }
@@ -52,14 +55,14 @@ try {
             dashboard_page();
             break;
         case 'graduates':
-            graduates_page(trim((string) ($_GET['q'] ?? '')));
+            graduates_page(trim((string) ($_GET['q'] ?? '')), max(1, (int) ($_GET['page'] ?? 1)));
             break;
         case 'grades':
             if ((int) db()->query('SELECT COUNT(*) FROM graduates')->fetchColumn() === 0) {
                 flash('warning', 'Masukkan data lulusan lebih dahulu sebelum mengelola nilai.');
                 redirect_to('import');
             }
-            grades_page(trim((string) ($_GET['q'] ?? '')), (string) ($_GET['status'] ?? ''));
+            grades_page(trim((string) ($_GET['q'] ?? '')), (string) ($_GET['status'] ?? ''), max(1, (int) ($_GET['page'] ?? 1)));
             break;
         case 'graduate-form':
             $id = (int) ($_GET['id'] ?? 0);
@@ -73,6 +76,11 @@ try {
             $savedId = save_graduate($_POST, $id ?: null);
             flash('success', 'Data lulusan tersimpan.');
             redirect_to('graduate', ['id'=>$savedId]);
+        case 'graduate-delete':
+            if ($method !== 'POST') break;
+            delete_graduate((int) ($_POST['id'] ?? 0));
+            flash('success', 'Lulusan dan seluruh nilainya dihapus.');
+            redirect_to('graduates');
         case 'graduate':
             $graduate = find_graduate((int) ($_GET['id'] ?? 0));
             if (!$graduate) throw new DomainException('Lulusan tidak ditemukan.');
@@ -294,13 +302,14 @@ try {
             redirect_to('graduate',['id'=>$id]);
         case 'download':
             $document = find_document((int) ($_GET['id'] ?? 0));
-            if (!$document || !is_file($document['pdf_path'])) throw new DomainException('PDF tidak ditemukan.');
-            if (!hash_equals($document['pdf_sha256'], hash_file('sha256',$document['pdf_path']))) throw new RuntimeException('Integritas PDF arsip tidak cocok.');
+            $pdfFile = $document ? document_pdf_file($document) : '';
+            if (!$document || !is_file($pdfFile)) throw new DomainException('PDF tidak ditemukan.');
+            if (!hash_equals($document['pdf_sha256'], hash_file('sha256',$pdfFile))) throw new RuntimeException('Integritas PDF arsip tidak cocok.');
             record_reprint((int) $document['id']);
             header('Content-Type: application/pdf');
             header('Content-Disposition: inline; filename="' . ($document['kind']==='diploma'?'ijazah':'transkrip') . '-' . (int) $document['id'] . '.pdf"');
             header('Cache-Control: no-store');
-            readfile($document['pdf_path']);
+            readfile($pdfFile);
             break;
         case 'revoke':
             if ($method !== 'POST') break;
@@ -321,6 +330,7 @@ try {
         'login' => 'login',
         'graduate-save' => 'graduate-form',
         'issue','revoke' => 'graduate',
+        'graduate-delete' => 'graduate',
         'grade-delete','grade-sheet-save','grade-sheet-import','grade-sheet-discard' => 'grade-sheet',
         'grade-sheet-template' => 'grades',
         'curriculum-save','curriculum-import','curriculum-discard','curriculum-template','grade-scale-save' => 'curriculum',
@@ -331,7 +341,7 @@ try {
     };
     $query = match ($back) {
         'graduate-form' => ['id'=>(int) ($_POST['id'] ?? 0)],
-        'graduate' => ['id'=>(int) ($_POST['graduate_id'] ?? $doc['graduate_id'] ?? 0)],
+        'graduate' => ['id'=>(int) ($_POST['graduate_id'] ?? $_POST['id'] ?? $doc['graduate_id'] ?? 0)],
         'grade-sheet' => ['id'=>(int) ($_POST['graduate_id'] ?? 0)],
         'curriculum' => ['program'=>(string) ($_POST['program'] ?? $_GET['program'] ?? '')],
         'template-edit' => ['kind'=>(string) ($_POST['kind'] ?? ''),'program'=>(string) ($_POST['program'] ?? '')],

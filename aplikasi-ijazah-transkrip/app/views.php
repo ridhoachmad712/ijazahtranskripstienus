@@ -52,7 +52,7 @@ function dashboard_page(): void
     $db = db();
     $graduateCount = (int) $db->query('SELECT COUNT(*) FROM graduates')->fetchColumn();
     $gradeCount = (int) $db->query('SELECT COUNT(*) FROM grades')->fetchColumn();
-    $issuedCount = (int) $db->query('SELECT COUNT(*) FROM documents WHERE status="issued"')->fetchColumn();
+    $issuedCount = (int) $db->query('SELECT COUNT(*) FROM documents WHERE status=\'issued\'')->fetchColumn();
     page_header('Beranda', 'dashboard');
     echo '<section class="dashboard-hero"><div class="hero-copy"><div class="eyebrow">RUANG KERJA ADMIN</div><h1>Dokumen kelulusan,<br>lebih tertata.</h1><p>Masukkan data lulusan terlebih dahulu, lalu kelola nilai untuk menyiapkan transkrip.</p><div class="d-flex flex-wrap gap-2"><a class="btn btn-primary" href="' . h(route_url('graduate-form')) . '">' . ui_icon('plus') . 'Tambah lulusan</a><a class="btn btn-outline-secondary" href="' . h(route_url('import')) . '">' . ui_icon('upload') . 'Impor lulusan</a></div></div><div class="hero-decoration" aria-hidden="true"><div class="hero-paper hero-paper-back"></div><div class="hero-paper hero-paper-front"><div class="hero-paper-seal">SN</div><div class="hero-paper-line long"></div><div class="hero-paper-line"></div><div class="hero-paper-line short"></div></div></div></section>';
     echo '<div class="row g-3 dashboard-stats"><div class="col-md-4"><div class="stat-card"><div class="stat-icon">' . ui_icon('people') . '</div><div class="stat-number">' . $graduateCount . '</div><div class="stat-label">Lulusan tercatat</div></div></div><div class="col-md-4"><div class="stat-card"><div class="stat-icon">' . ui_icon('template') . '</div><div class="stat-number">' . $gradeCount . '</div><div class="stat-label">Baris nilai tersimpan</div></div></div><div class="col-md-4"><div class="stat-card"><div class="stat-icon">' . ui_icon('document') . '</div><div class="stat-number">' . $issuedCount . '</div><div class="stat-label">Dokumen aktif</div></div></div></div>';
@@ -60,16 +60,34 @@ function dashboard_page(): void
     page_footer();
 }
 
-function graduates_page(string $search): void
+function pagination_html(string $route, array $query, int $page, int $total): string
 {
-    $rows = list_graduates($search);
+    $pages = (int) ceil($total / LIST_PAGE_SIZE);
+    $from = $total ? ($page - 1) * LIST_PAGE_SIZE + 1 : 0;
+    $to = min($total, $page * LIST_PAGE_SIZE);
+    $html = '<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-3"><div class="small text-secondary">Menampilkan ' . $from . '–' . $to . ' dari ' . $total . '</div>';
+    if ($pages > 1) {
+        $html .= '<nav aria-label="Halaman"><ul class="pagination pagination-sm mb-0">';
+        $link = static fn(int $target, string $label, bool $disabled = false, bool $active = false) => '<li class="page-item' . ($disabled ? ' disabled' : '') . ($active ? ' active' : '') . '"><a class="page-link" href="' . h(route_url($route, $query + ['page'=>$target])) . '"' . ($active ? ' aria-current="page"' : '') . '>' . $label . '</a></li>';
+        $html .= $link(max(1, $page - 1), '‹', $page <= 1);
+        foreach (array_unique([1, max(1, $page - 2), $page - 1, $page, $page + 1, min($pages, $page + 2), $pages]) as $target) {
+            if ($target >= 1 && $target <= $pages) $html .= $link($target, (string) $target, false, $target === $page);
+        }
+        $html .= $link(min($pages, $page + 1), '›', $page >= $pages) . '</ul></nav>';
+    }
+    return $html . '</div>';
+}
+
+function graduates_page(string $search, int $page = 1): void
+{
+    [$rows, $total] = list_graduates($search, $page);
     page_header('Data lulusan', 'graduates');
     echo '<div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4"><div><h1 class="h4 mb-1">Data lulusan</h1><p class="text-secondary mb-0">Identitas bersama untuk kedua dokumen.</p></div><a class="btn btn-primary" href="' . h(route_url('graduate-form')) . '">Tambah lulusan</a></div><form class="row g-2 mb-3" method="get"><input type="hidden" name="r" value="graduates"><div class="col-sm-5"><input class="form-control" name="q" value="' . h($search) . '" placeholder="Cari nama atau NIM" aria-label="Cari nama atau NIM"></div><div class="col-auto"><button class="btn btn-outline-secondary">Cari</button></div></form><div class="table-responsive border rounded"><table class="table table-hover align-middle mb-0"><thead class="table-light"><tr><th>NIM</th><th>Nama</th><th>Prodi</th><th>Nilai</th><th>Ijazah</th><th>Transkrip</th><th></th></tr></thead><tbody>';
     foreach ($rows as $row) {
         echo '<tr><td>' . h($row['nim']) . '</td><td>' . h($row['name']) . '</td><td>' . h(programs()[$row['program_code']]['label'] ?? $row['program_code']) . '</td><td>' . (int) $row['grade_count'] . ' MK</td><td>' . status_badge($row['diploma_status']) . '</td><td>' . status_badge($row['transcript_status']) . '</td><td><a class="btn btn-sm btn-outline-secondary" href="' . h(route_url('graduate', ['id'=>$row['id']])) . '">Buka</a></td></tr>';
     }
     if (!$rows) echo '<tr><td colspan="7" class="empty-table-cell"><div class="empty-state"><div class="empty-state-icon">' . ui_icon('people') . '</div><strong>' . ($search === '' ? 'Belum ada data lulusan' : 'Lulusan tidak ditemukan') . '</strong><span>' . ($search === '' ? 'Tambahkan satu lulusan atau impor data dari Excel.' : 'Coba kata kunci nama atau NIM yang lain.') . '</span>' . ($search === '' ? '<a class="btn btn-sm btn-primary mt-2" href="' . h(route_url('graduate-form')) . '">Tambah lulusan</a>' : '') . '</div></td></tr>';
-    echo '</tbody></table></div>';
+    echo '</tbody></table></div>' . pagination_html('graduates', $search === '' ? [] : ['q'=>$search], $page, $total);
     page_footer();
 }
 
@@ -93,7 +111,7 @@ function grade_status(array $row): array
     };
 }
 
-function grades_page(string $search, string $filter = ''): void
+function grades_page(string $search, string $filter = '', int $page = 1): void
 {
     $rows = list_grade_overview($search);
     $filters = ['' => 'Semua', 'empty' => 'Belum ada nilai', 'mismatch' => 'Belum cocok', 'match' => 'Cocok', 'issued' => 'Transkrip terbit'];
@@ -104,16 +122,15 @@ function grades_page(string $search, string $filter = ''): void
     foreach ($filters as $key => $label) echo '<option value="' . h($key) . '"' . ($key === $filter ? ' selected' : '') . '>' . h($label) . '</option>';
     echo '</select></div><div class="col-auto"><button class="btn btn-outline-secondary">Tampilkan</button></div></form>';
     echo '<div class="table-responsive border rounded"><table class="table table-hover align-middle mb-0"><thead><tr><th>NIM</th><th>Nama</th><th>Prodi</th><th>Nilai terisi</th><th>SKS</th><th>IPK</th><th>Status</th><th></th></tr></thead><tbody>';
-    $shown = 0;
-    foreach ($rows as $row) {
+    $rows = array_values(array_filter($rows, static fn($row) => $filter === '' || grade_status($row)[0] === $filter));
+    $total = count($rows);
+    foreach (array_slice($rows, ($page - 1) * LIST_PAGE_SIZE, LIST_PAGE_SIZE) as $row) {
         [$key, $label, $class] = grade_status($row);
-        if ($filter !== '' && $key !== $filter) continue;
-        $shown++;
         $credits = (float) $row['credits'];
         echo '<tr><td>' . h($row['nim']) . '</td><td>' . h($row['name']) . '</td><td>' . h(programs()[$row['program_code']]['label'] ?? $row['program_code']) . '</td><td>' . (int) $row['grade_count'] . ' / ' . (int) $row['curriculum_count'] . '</td><td>' . h(format_number($credits)) . '</td><td>' . ($credits > 0 ? h(number_format((float) $row['quality'] / $credits, 2, ',', '.')) : '—') . '</td><td><span class="badge ' . h($class) . '">' . h($label) . '</span></td><td class="text-end"><a class="btn btn-sm btn-outline-secondary" href="' . h(route_url('grade-sheet', ['id'=>$row['id']])) . '">' . ($key === 'issued' ? 'Lihat nilai' : 'Isi nilai') . '</a></td></tr>';
     }
-    if (!$shown) echo '<tr><td colspan="8" class="text-secondary text-center py-4">Tidak ada mahasiswa yang sesuai.</td></tr>';
-    echo '</tbody></table></div>';
+    if (!$total) echo '<tr><td colspan="8" class="text-secondary text-center py-4">Tidak ada mahasiswa yang sesuai.</td></tr>';
+    echo '</tbody></table></div>' . pagination_html('grades', array_filter(['q'=>$search, 'status'=>$filter], 'strlen'), $page, $total);
     page_footer();
 }
 
@@ -179,6 +196,7 @@ function graduate_detail_page(array $graduate): void
     }
     if (!$docs) echo '<tr><td colspan="5" class="text-secondary text-center py-3">Belum ada dokumen terbit.</td></tr>';
     echo '</tbody></table></div></div></div>';
+    if (!$docs) echo '<div class="card mt-3 border-danger-subtle"><div class="card-body d-flex flex-wrap align-items-center justify-content-between gap-2"><div><h2 class="h6 mb-1">Hapus lulusan</h2><div class="small text-secondary">Untuk data yang salah input. Identitas dan seluruh nilai lulusan ini akan dihapus permanen.</div></div><form method="post" action="' . h(route_url('graduate-delete')) . '" onsubmit="return confirm(\'Hapus permanen ' . h(addslashes($graduate['name'])) . ' (NIM ' . h(addslashes($graduate['nim'])) . ') beserta seluruh nilainya?\')">' . csrf_field() . '<input type="hidden" name="id" value="' . $id . '"><button class="btn btn-outline-danger" type="submit">Hapus lulusan</button></form></div></div>';
     page_footer();
 }
 
@@ -327,7 +345,7 @@ function template_edit_page(array $template): void
     echo '<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-4"><div><a class="small text-decoration-none" href="' . h(route_url('templates')) . '">← Template</a><h1 class="h4 mt-2 mb-1">' . ($kind==='diploma'?'Ijazah':'Transkrip') . ' · ' . h(programs()[$program]['label']) . '</h1><p class="text-secondary mb-0">Edit sambil melihat hasil. Perubahan baru berlaku setelah disimpan sebagai versi baru.</p></div><span class="badge text-bg-light border">Versi aktif ' . (int) $template['version'] . '</span></div><div class="template-editor row g-3"><div class="col-12 col-xl-5 order-2 order-xl-1"><form id="template-form" data-preview-url="' . h(route_url('template-live-preview')) . '" data-kind="' . h($kind) . '" method="post" action="' . h(route_url('template-save')) . '">' . csrf_field() . '<input type="hidden" name="kind" value="' . h($kind) . '"><input type="hidden" name="program" value="' . h($program) . '">';
     if ($kind === 'diploma') {
         echo '<div class="card mb-3"><div class="card-body"><h2 class="h6">Redaksi dan pejabat</h2><div class="row g-3">';
-        $textLabels = ['institution_accreditation'=>'Akreditasi institusi','opening'=>'Kalimat pembuka','study'=>'Kalimat studi','program'=>'Program studi','program_accreditation'=>'Akreditasi prodi','confer'=>'Kalimat pemberian gelar','degree'=>'Gelar','rights'=>'Hak dan kewajiban','left_role'=>'Jabatan pejabat kiri','right_role'=>'Jabatan pejabat kanan','left_name'=>'Nama pejabat kiri','right_name'=>'Nama pejabat kanan','left_nidn'=>'NIDN pejabat kiri','right_nidn'=>'NIDN pejabat kanan'];
+        $textLabels = ['institution_accreditation'=>'Akreditasi institusi','opening'=>'Kalimat pembuka','study'=>'Kalimat studi','program'=>'Program studi','program_accreditation'=>'Akreditasi prodi','confer'=>'Kalimat pemberian gelar','degree'=>'Gelar','rights'=>'Hak dan kewajiban','left_role'=>'Jabatan pejabat kiri','right_role'=>'Jabatan pejabat kanan','left_name'=>'Nama pejabat kiri','right_name'=>'Nama pejabat kanan','left_nidn'=>'NIDN pejabat kiri','right_nidn'=>'NIDN pejabat kanan','issue_place'=>'Tempat penerbitan'];
         foreach ($settings['texts'] as $key=>$value) echo '<div class="col-md-6"><label class="form-label small" for="text_' . h($key) . '">' . h($textLabels[$key] ?? $key) . '</label><input class="form-control" id="text_' . h($key) . '" name="text[' . h($key) . ']" value="' . h($value) . '"></div>';
         echo '</div></div></div><div class="card mb-3" id="qr-placement"><div class="card-body"><h2 class="h6">Lokasi QR verifikasi</h2><p class="small text-secondary">Kotak panduan QR selalu terlihat pada editor. Geser kotaknya di kertas atau isi koordinat dan ukuran di bawah.</p><div class="row g-2">';
         foreach (['x'=>'X (mm)','y'=>'Y (mm)','size'=>'Ukuran (mm)'] as $part=>$label) echo '<div class="col-4"><label class="form-label small" for="qr_' . $part . '">' . $label . '</label><input class="form-control form-control-sm" id="qr_' . $part . '" type="number" min="0" step="0.1" name="qr[' . $part . ']" value="' . h($settings['qr'][$part]) . '" required></div>';
@@ -398,7 +416,7 @@ function template_edit_page(array $template): void
     } else {
         echo '<p class="small text-secondary mb-3">Header, identitas, tabel nilai contoh, dan pengesahan mengikuti perubahan formulir secara langsung.</p><div id="pdf-wrap"><iframe id="live-pdf" class="live-pdf" title="Pratinjau template" loading="lazy"></iframe><button class="btn btn-sm btn-outline-secondary" type="submit" form="template-form" formaction="' . h(route_url('template-live-preview')) . '" formtarget="_blank" formnovalidate>Buka PDF saat ini di tab baru</button></div>';
     }
-    echo '</div></div></div></div><script src="assets/template-editor.js?v=8" defer></script>';
+    echo '</div></div></div></div><script src="assets/template-editor.js?v=9" defer></script>';
     page_footer();
 }
 

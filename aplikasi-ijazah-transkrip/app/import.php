@@ -303,6 +303,11 @@ function save_import_preview(array $preview): string
     $token = bin2hex(random_bytes(20));
     $directory = rtrim((string) app_config()['storage_root'], '/\\') . '/imports';
     if (!is_dir($directory) && !mkdir($directory, 0770, true) && !is_dir($directory)) throw new RuntimeException('Direktori impor tidak dapat dibuat.');
+    // Pratinjau berisi data pribadi: hapus pratinjau sebelumnya dan yang sudah lebih dari sehari.
+    $previous = $_SESSION['import_token'] ?? '';
+    foreach (glob($directory . '/*.json') ?: [] as $file) {
+        if (basename($file, '.json') === $previous || filemtime($file) < time() - 86400) @unlink($file);
+    }
     $path = $directory . '/' . $token . '.json';
     if (file_put_contents($path, json_encode($preview, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR), LOCK_EX) === false) throw new RuntimeException('Pratinjau impor gagal disimpan.');
     $_SESSION['import_token'] = $token;

@@ -1,0 +1,23 @@
+name: Smoke test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: aplikasi-ijazah-transkrip
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo_sqlite, gd, mbstring, dom, zip, xmlreader, xmlwriter, fileinfo
+          tools: composer
+          coverage: none
+      - run: composer install --no-interaction --no-progress
+      - run: php tests/smoke.php
+      - run: composer audit --no-interaction

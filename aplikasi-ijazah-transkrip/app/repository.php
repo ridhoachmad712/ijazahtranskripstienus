@@ -29,6 +29,7 @@ function default_diploma_settings(string $program): array
             'right_name' => '',
             'left_nidn' => '',
             'right_nidn' => '',
+            'issue_place' => 'Makassar',
         ],
         'fields' => [
             'number' => ['label'=>'Nomor ijazah nasional','x'=>145,'y'=>12,'w'=>140,'pt'=>13,'align'=>'right'],
@@ -99,12 +100,20 @@ function find_graduate_by_nim(string $nim): ?array
     return $stmt->fetch() ?: null;
 }
 
-function list_graduates(string $search = ''): array
+const LIST_PAGE_SIZE = 50;
+
+// Mengembalikan [baris halaman ini, jumlah seluruh hasil].
+function list_graduates(string $search = '', int $page = 1): array
 {
-    $stmt = db()->prepare('SELECT g.*, (SELECT COUNT(*) FROM grades WHERE graduate_id=g.id) AS grade_count, (SELECT status FROM documents WHERE graduate_id=g.id AND kind="diploma" ORDER BY id DESC LIMIT 1) AS diploma_status, (SELECT status FROM documents WHERE graduate_id=g.id AND kind="transcript" ORDER BY id DESC LIMIT 1) AS transcript_status FROM graduates g WHERE ?="" OR g.nim LIKE ? OR g.name LIKE ? ORDER BY g.id DESC LIMIT 150');
     $like = '%' . $search . '%';
-    $stmt->execute([$search, $like, $like]);
-    return $stmt->fetchAll();
+    $count = db()->prepare('SELECT COUNT(*) FROM graduates g WHERE ?=\'\' OR g.nim LIKE ? OR g.name LIKE ?');
+    $count->execute([$search, $like, $like]);
+    $stmt = db()->prepare('SELECT g.*, (SELECT COUNT(*) FROM grades WHERE graduate_id=g.id) AS grade_count, (SELECT status FROM documents WHERE graduate_id=g.id AND kind=\'diploma\' ORDER BY id DESC LIMIT 1) AS diploma_status, (SELECT status FROM documents WHERE graduate_id=g.id AND kind=\'transcript\' ORDER BY id DESC LIMIT 1) AS transcript_status FROM graduates g WHERE ?=\'\' OR g.nim LIKE ? OR g.name LIKE ? ORDER BY g.id DESC LIMIT ? OFFSET ?');
+    foreach ([$search, $like, $like] as $index => $value) $stmt->bindValue($index + 1, $value);
+    $stmt->bindValue(4, LIST_PAGE_SIZE, PDO::PARAM_INT);
+    $stmt->bindValue(5, (max(1, $page) - 1) * LIST_PAGE_SIZE, PDO::PARAM_INT);
+    $stmt->execute();
+    return [$stmt->fetchAll(), (int) $count->fetchColumn()];
 }
 
 function graduate_input(array $source): array
@@ -159,6 +168,27 @@ function save_graduate(array $data, ?int $id = null): int
     $newId = (int) $db->lastInsertId();
     audit('graduate', $newId, 'created');
     return $newId;
+}
+
+function delete_graduate(int $id): void
+{
+    $graduate = find_graduate($id);
+    if (!$graduate) throw new DomainException('Lulusan tidak ditemukan.');
+    $stmt = db()->prepare('SELECT COUNT(*) FROM documents WHERE graduate_id=?');
+    $stmt->execute([$id]);
+    if ((int) $stmt->fetchColumn() > 0) throw new DomainException('Lulusan yang pernah memiliki dokumen terbit tidak dapat dihapus agar riwayat penerbitan tetap utuh.');
+    $db = db();
+    $db->beginTransaction();
+    try {
+        $db->prepare('DELETE FROM grades WHERE graduate_id=?')->execute([$id]);
+        $db->prepare('DELETE FROM graduates WHERE id=?')->execute([$id]);
+        audit('graduate', $id, 'deleted', $graduate['nim'] . ' ' . $graduate['name']);
+        $db->commit();
+    } catch (Throwable $e) {
+        $db->rollBack();
+        throw $e;
+    }
+    unset($_SESSION['grade_draft'][$id]);
 }
 
 function grades_for(int $graduateId): array
@@ -255,7 +285,7 @@ function validated_curriculum_rows(array $rows): array
         if ($code === '' || mb_strlen($code) > 30) $errors[] = 'Baris ' . $line . ': kode mata kuliah wajib diisi (maksimal 30 karakter).';
         elseif (isset($seen[$code])) $errors[] = 'Baris ' . $line . ': kode ' . $code . ' ganda.';
         if ($name === '' || mb_strlen($name) > 200) $errors[] = 'Baris ' . $line . ': nama mata kuliah wajib diisi (maksimal 200 karakter).';
-        if ($credits === false || $credits <= 0 || $credits > 20) $errors[] = 'Baris ' . $line . ': SKS harus angka lebih dari 0 sampai 20.';
+        if ($credits === false || $credits <= 0 || $credits > 20 || floor($credits) != $credits) $errors[] = 'Baris ' . $line . ': SKS harus bilangan bulat 1 sampai 20.';
         $seen[$code] = true;
         $clean[] = ['position'=>count($clean) + 1, 'course_code'=>$code, 'course_name'=>$name, 'credits'=>(float) $credits];
     }
@@ -340,7 +370,7 @@ function list_grade_overview(string $search = ''): array
         (SELECT COUNT(*) FROM curriculum_courses c WHERE c.program_code=g.program_code) AS curriculum_count,
         EXISTS(SELECT 1 FROM documents d WHERE d.graduate_id=g.id AND d.kind=\'transcript\' AND d.status=\'issued\') AS transcript_issued
         FROM graduates g LEFT JOIN grades gr ON gr.graduate_id=g.id
-        WHERE ?=\'\' OR g.nim LIKE ? OR g.name LIKE ? GROUP BY g.id ORDER BY g.name LIMIT 300');
+        WHERE ?=\'\' OR g.nim LIKE ? OR g.name LIKE ? GROUP BY g.id ORDER BY g.name');
     $like = '%' . $search . '%';
     $stmt->execute([$search, $like, $like]);
     return $stmt->fetchAll();
@@ -356,7 +386,7 @@ function has_official_totals(array $graduate): bool
 
 function graduate_has_issued_document(int $graduateId, ?string $kind = null): bool
 {
-    $sql = 'SELECT 1 FROM documents WHERE graduate_id=? AND status="issued"' . ($kind !== null ? ' AND kind=?' : '') . ' LIMIT 1';
+    $sql = 'SELECT 1 FROM documents WHERE graduate_id=? AND status=\'issued\'' . ($kind !== null ? ' AND kind=?' : '') . ' LIMIT 1';
     $stmt = db()->prepare($sql);
     $stmt->execute($kind !== null ? [$graduateId, $kind] : [$graduateId]);
     return (bool) $stmt->fetchColumn();
@@ -543,7 +573,7 @@ function find_document(int $id): ?array
 
 function find_document_by_token(string $token): ?array
 {
-    $stmt = db()->prepare('SELECT * FROM documents WHERE qr_token=? AND kind="diploma"');
+    $stmt = db()->prepare('SELECT * FROM documents WHERE qr_token=? AND kind=\'diploma\'');
     $stmt->execute([$token]);
     return $stmt->fetch() ?: null;
 }
@@ -572,18 +602,18 @@ function issue_document(int $graduateId, string $kind): int
     $db->beginTransaction();
     $pdfPath = null;
     try {
-        $stmt = $db->prepare('SELECT id FROM documents WHERE graduate_id=? AND kind=? AND status="issued" LIMIT 1');
+        $stmt = $db->prepare('SELECT id FROM documents WHERE graduate_id=? AND kind=? AND status=\'issued\' LIMIT 1');
         $stmt->execute([$graduateId, $kind]);
         if ($stmt->fetch()) throw new DomainException('Dokumen aktif sudah ada. Batalkan dahulu jika perlu penggantian.');
-        $stmt = $db->prepare('SELECT id FROM documents WHERE kind=? AND document_number=? AND status="issued" LIMIT 1');
+        $stmt = $db->prepare('SELECT id FROM documents WHERE kind=? AND document_number=? AND status=\'issued\' LIMIT 1');
         $stmt->execute([$kind, $number]);
         if ($stmt->fetch()) throw new DomainException('Nomor dokumen sudah dipakai dokumen aktif lain.');
-        $replaced = $db->prepare('SELECT id FROM documents WHERE graduate_id=? AND kind=? AND status="revoked" ORDER BY id DESC LIMIT 1');
+        $replaced = $db->prepare('SELECT id FROM documents WHERE graduate_id=? AND kind=? AND status=\'revoked\' ORDER BY id DESC LIMIT 1');
         $replaced->execute([$graduateId, $kind]);
         $replacesId = $replaced->fetchColumn() ?: null;
         $snapshot = ['graduate'=>$graduate, 'grades'=>$grades, 'template'=>$template, 'summary'=>grade_summary($grades)];
         $token = $kind === 'diploma' ? bin2hex(random_bytes(24)) : null;
-        $stmt = $db->prepare('INSERT INTO documents(graduate_id,kind,document_number,status,template_id,snapshot_json,qr_token,issued_at,replaces_id) VALUES(?,?,?,"issued",?,?,?,?,?)');
+        $stmt = $db->prepare('INSERT INTO documents(graduate_id,kind,document_number,status,template_id,snapshot_json,qr_token,issued_at,replaces_id) VALUES(?,?,?,\'issued\',?,?,?,?,?)');
         $stmt->execute([$graduateId,$kind,$number,$template['id'],json_encode($snapshot,JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),$token,now_local(),$replacesId]);
         $id = (int) $db->lastInsertId();
         $pdfBytes = render_pdf($kind, $snapshot, $token);
@@ -591,8 +621,8 @@ function issue_document(int $graduateId, string $kind): int
         if (!is_dir($documentsDir) && !mkdir($documentsDir, 0770, true) && !is_dir($documentsDir)) throw new RuntimeException('Direktori dokumen tidak dapat dibuat.');
         $pdfPath = $documentsDir . '/' . $id . '.pdf';
         if (file_put_contents($pdfPath, $pdfBytes, LOCK_EX) === false) throw new RuntimeException('PDF final gagal disimpan.');
-        $db->prepare('UPDATE documents SET pdf_path=?,pdf_sha256=? WHERE id=?')->execute([$pdfPath, hash('sha256', $pdfBytes), $id]);
-        $db->prepare('INSERT INTO document_events(document_id,admin_id,action,created_at) VALUES(?,?,"issued",?)')->execute([$id,$_SESSION['admin_id'] ?? null,now_local()]);
+        $db->prepare('UPDATE documents SET pdf_path=?,pdf_sha256=? WHERE id=?')->execute(['documents/' . $id . '.pdf', hash('sha256', $pdfBytes), $id]);
+        $db->prepare('INSERT INTO document_events(document_id,admin_id,action,created_at) VALUES(?,?,\'issued\',?)')->execute([$id,$_SESSION['admin_id'] ?? null,now_local()]);
         audit('document', $id, 'issued', $kind);
         $db->commit();
         return $id;
@@ -603,6 +633,14 @@ function issue_document(int $graduateId, string $kind): int
     }
 }
 
+// PDF arsip disimpan relatif terhadap storage_root; dokumen lama mungkin masih memakai path lengkap.
+function document_pdf_file(array $document): string
+{
+    $path = (string) $document['pdf_path'];
+    if ($path === '' || is_file($path)) return $path;
+    return rtrim((string) app_config()['storage_root'], '/\\') . '/' . ltrim($path, '/\\');
+}
+
 function revoke_document(int $id, string $reason): void
 {
     $reason = trim($reason);
@@ -610,10 +648,10 @@ function revoke_document(int $id, string $reason): void
     $db = db();
     $db->beginTransaction();
     try {
-        $stmt = $db->prepare('UPDATE documents SET status="revoked",revoked_at=?,revoked_reason=? WHERE id=? AND status="issued"');
+        $stmt = $db->prepare('UPDATE documents SET status=\'revoked\',revoked_at=?,revoked_reason=? WHERE id=? AND status=\'issued\'');
         $stmt->execute([now_local(),$reason,$id]);
         if (!$stmt->rowCount()) throw new DomainException('Dokumen aktif tidak ditemukan.');
-        $db->prepare('INSERT INTO document_events(document_id,admin_id,action,reason,created_at) VALUES(?,?,"revoked",?,?)')->execute([$id,$_SESSION['admin_id'] ?? null,$reason,now_local()]);
+        $db->prepare('INSERT INTO document_events(document_id,admin_id,action,reason,created_at) VALUES(?,?,\'revoked\',?,?)')->execute([$id,$_SESSION['admin_id'] ?? null,$reason,now_local()]);
         audit('document', $id, 'revoked', $reason);
         $db->commit();
     } catch (Throwable $e) {
@@ -624,5 +662,5 @@ function revoke_document(int $id, string $reason): void
 
 function record_reprint(int $id): void
 {
-    db()->prepare('INSERT INTO document_events(document_id,admin_id,action,created_at) VALUES(?,?,"downloaded",?)')->execute([$id,$_SESSION['admin_id'] ?? null,now_local()]);
+    db()->prepare('INSERT INTO document_events(document_id,admin_id,action,created_at) VALUES(?,?,\'downloaded\',?)')->execute([$id,$_SESSION['admin_id'] ?? null,now_local()]);
 }

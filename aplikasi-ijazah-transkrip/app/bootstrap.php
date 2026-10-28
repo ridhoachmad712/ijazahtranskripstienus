@@ -281,12 +281,21 @@ function clear_login_failure(string $username): void
     db()->prepare('DELETE FROM login_attempts WHERE bucket=?')->execute([login_bucket($username)]);
 }
 
+const ADMIN_IDLE_SECONDS = 7200;
+
 function require_admin(): array
 {
     $admin = current_admin();
     if ($admin === null) {
         redirect_to('login');
     }
+    if (time() - (int) ($_SESSION['last_activity'] ?? time()) > ADMIN_IDLE_SECONDS) {
+        $_SESSION = [];
+        session_regenerate_id(true);
+        flash('warning', 'Sesi berakhir karena tidak aktif lebih dari 2 jam. Silakan masuk kembali.');
+        redirect_to('login');
+    }
+    $_SESSION['last_activity'] = time();
     return $admin;
 }
 

@@ -64,7 +64,7 @@ function diploma_field_values(array $snapshot): array
         'confer' => $texts['confer'],
         'degree' => $texts['degree'],
         'rights' => $texts['rights'],
-        'issue' => 'Diberikan di Makassar, ' . format_date_id($graduate['issue_date']),
+        'issue' => 'Diberikan di ' . (trim((string) ($texts['issue_place'] ?? '')) ?: 'Makassar') . ', ' . format_date_id($graduate['issue_date']),
         'left_role' => $texts['left_role'],
         'right_role' => $texts['right_role'],
         'left_name' => $texts['left_name'],

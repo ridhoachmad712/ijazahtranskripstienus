@@ -189,8 +189,8 @@ try {
     $transcriptId = issue_document($id, 'transcript');
     $diploma = find_document($diplomaId);
     $transcript = find_document($transcriptId);
-    expect(str_starts_with((string) file_get_contents($diploma['pdf_path']), '%PDF'), 'PDF ijazah tidak terbentuk.');
-    expect(str_starts_with((string) file_get_contents($transcript['pdf_path']), '%PDF'), 'PDF transkrip tidak terbentuk.');
+    expect(str_starts_with((string) file_get_contents(document_pdf_file($diploma)), '%PDF'), 'PDF ijazah tidak terbentuk.');
+    expect(str_starts_with((string) file_get_contents(document_pdf_file($transcript)), '%PDF'), 'PDF transkrip tidak terbentuk.');
     expect(find_document_by_token($diploma['qr_token'])['id'] == $diplomaId, 'Token verifikasi tidak cocok.');
     $changed = find_graduate($id);
     $changed['name'] = 'Nama Setelah Terbit';
@@ -226,12 +226,42 @@ try {
         'credits'=>3,'grade_letter'=>'A','grade_weight'=>4,'group_name'=>'Inti',
     ]);
     $longDoc = find_document(issue_document($longId,'transcript'));
-    expect(str_starts_with((string) file_get_contents($longDoc['pdf_path']), '%PDF'), 'PDF transkrip panjang tidak terbentuk.');
+    expect(str_starts_with((string) file_get_contents(document_pdf_file($longDoc)), '%PDF'), 'PDF transkrip panjang tidak terbentuk.');
+    expect($longDoc['pdf_path'] === 'documents/' . $longDoc['id'] . '.pdf', 'Lokasi PDF arsip harus relatif terhadap folder storage.');
+
+    // Paket perbaikan cepat: hapus lulusan, paginasi, SKS bulat, tempat terbit, pratinjau impor.
+    try {
+        delete_graduate($longId);
+        throw new RuntimeException('Lulusan dengan dokumen terbit tidak boleh dihapus.');
+    } catch (DomainException) {
+    }
+    $mistakeId = save_graduate(['nim'=>'0099990000','name'=>'Salah Input','program_code'=>'AKUNTANSI']);
+    save_grade($mistakeId, ['position'=>1,'course_code'=>'X1','course_name'=>'Uji','credits'=>2,'grade_letter'=>'A','grade_weight'=>4]);
+    delete_graduate($mistakeId);
+    expect(find_graduate($mistakeId) === null && grades_for($mistakeId) === [], 'Lulusan salah input beserta nilainya belum terhapus.');
+    for ($i = 1; $i <= LIST_PAGE_SIZE; $i++) save_graduate(['nim'=>sprintf('PAGE%04d', $i),'name'=>'Paginasi ' . $i,'program_code'=>'MANAJEMEN']);
+    [$firstPage, $total] = list_graduates('', 1);
+    [$secondPage] = list_graduates('', 2);
+    expect(count($firstPage) === LIST_PAGE_SIZE && $total > LIST_PAGE_SIZE && count($secondPage) === $total - LIST_PAGE_SIZE, 'Paginasi daftar lulusan salah.');
+    [$searchPage, $searchTotal] = list_graduates('Paginasi 1', 1);
+    expect($searchTotal === 11 && count($searchPage) === 11, 'Pencarian dengan paginasi salah.');
+    try {
+        curriculum_rows_from_form(['course_code'=>['MK1'], 'course_name'=>['Satu'], 'credits'=>['2.5']]);
+        throw new RuntimeException('SKS pecahan seharusnya ditolak.');
+    } catch (DomainException) {
+    }
+    $placeTemplate = active_template('diploma', 'AKUNTANSI');
+    $placeTemplate['settings']['texts']['issue_place'] = 'Sungguminasa';
+    expect(str_contains(render_diploma_html(sample_template_snapshot($placeTemplate), null, true), 'Diberikan di Sungguminasa, 1 September 2026'), 'Tempat penerbitan ijazah belum mengikuti template.');
+    expect(str_contains(render_diploma_html(sample_template_snapshot(active_template('diploma', 'MANAJEMEN')), null, true), 'Diberikan di Makassar,'), 'Tempat penerbitan bawaan harus Makassar.');
+    save_import_preview(make_import_preview_from_rows([array_replace($newGraduate, ['_line'=>2])], 'graduates'));
+    save_import_preview(make_import_preview_from_rows([array_replace($newGraduate, ['_line'=>2])], 'graduates'));
+    expect(count(glob($root . '/imports/*.json') ?: []) === 1, 'Pratinjau impor lama tidak dibersihkan.');
     if (getenv('STIE_KEEP_QA') === '1') {
         $diplomaTarget = dirname(__DIR__) . '/storage/qa-diploma-with-qr.pdf';
-        copy($diploma['pdf_path'], $diplomaTarget);
+        copy(document_pdf_file($diploma), $diplomaTarget);
         $target = dirname(__DIR__) . '/storage/qa-long-transcript.pdf';
-        copy($longDoc['pdf_path'], $target);
+        copy(document_pdf_file($longDoc), $target);
         echo "PDF QA: {$diplomaTarget}\n";
         echo "PDF QA: {$target}\n";
     }
