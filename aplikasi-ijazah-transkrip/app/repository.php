@@ -179,6 +179,173 @@ function grade_summary(array $grades): array
     return ['credits'=>$credits, 'quality'=>$quality, 'gpa'=>$credits > 0 ? $quality / $credits : null];
 }
 
+// null berarti total resmi belum diisi sehingga belum dapat dibandingkan.
+function official_totals_match(array $summary, array $graduate): ?bool
+{
+    if (!has_official_totals($graduate)) return null;
+    return abs($summary['credits'] - (float) $graduate['official_credits']) <= 0.001
+        && $summary['gpa'] !== null && abs($summary['gpa'] - (float) $graduate['official_gpa']) <= 0.011;
+}
+
+function seed_grade_scale(PDO $db): void
+{
+    if ((int) $db->query('SELECT COUNT(*) FROM grade_scale')->fetchColumn() > 0) return;
+    $stmt = $db->prepare('INSERT INTO grade_scale(letter,weight,position) VALUES(?,?,?)');
+    foreach ([['A',4],['B',3],['C',2],['D',1],['E',0]] as $index => [$letter, $weight]) $stmt->execute([$letter, $weight, $index + 1]);
+}
+
+function grade_scale(): array
+{
+    $scale = [];
+    foreach (db()->query('SELECT letter, weight FROM grade_scale ORDER BY position') as $row) $scale[$row['letter']] = (float) $row['weight'];
+    return $scale;
+}
+
+function save_grade_scale(array $letters, array $weights): void
+{
+    $rows = [];
+    $errors = [];
+    foreach (array_values($letters) as $index => $letter) {
+        $letter = strtoupper(trim((string) $letter));
+        $weight = trim((string) (array_values($weights)[$index] ?? ''));
+        if ($letter === '' && $weight === '') continue;
+        $number = filter_var($weight, FILTER_VALIDATE_FLOAT);
+        if ($letter === '' || mb_strlen($letter) > 5) $errors[] = 'Baris ' . ($index + 1) . ': nilai huruf wajib diisi (maksimal 5 karakter).';
+        elseif (isset($rows[$letter])) $errors[] = 'Nilai huruf ' . $letter . ' ganda.';
+        if ($number === false || $number < 0 || $number > 4) $errors[] = 'Baris ' . ($index + 1) . ': bobot harus angka 0 sampai 4.';
+        $rows[$letter] = (float) $number;
+    }
+    if (!$rows && !$errors) $errors[] = 'Skala nilai minimal berisi satu nilai huruf.';
+    if ($errors) throw new DomainException(implode(' ', $errors));
+    $db = db();
+    $db->beginTransaction();
+    try {
+        $db->exec('DELETE FROM grade_scale');
+        $stmt = $db->prepare('INSERT INTO grade_scale(letter,weight,position) VALUES(?,?,?)');
+        $position = 0;
+        foreach ($rows as $letter => $weight) $stmt->execute([(string) $letter, $weight, ++$position]);
+        audit('grade_scale', null, 'saved', implode(', ', array_map(static fn($l, $w) => $l . '=' . $w, array_keys($rows), $rows)));
+        $db->commit();
+    } catch (Throwable $e) {
+        $db->rollBack();
+        throw $e;
+    }
+}
+
+function curriculum_for(string $program): array
+{
+    $stmt = db()->prepare('SELECT * FROM curriculum_courses WHERE program_code=? ORDER BY position, id');
+    $stmt->execute([$program]);
+    return $stmt->fetchAll();
+}
+
+// Baris kurikulum dari formulir atau berkas; urutan baris menjadi urutan mata kuliah di transkrip.
+function validated_curriculum_rows(array $rows): array
+{
+    $clean = [];
+    $errors = [];
+    $seen = [];
+    foreach ($rows as $index => $row) {
+        $code = trim((string) ($row['course_code'] ?? ''));
+        $name = trim((string) ($row['course_name'] ?? ''));
+        $creditsText = trim((string) ($row['credits'] ?? ''));
+        if ($code === '' && $name === '' && $creditsText === '') continue;
+        $line = $row['_line'] ?? ($index + 1);
+        $credits = filter_var($creditsText, FILTER_VALIDATE_FLOAT);
+        if ($code === '' || mb_strlen($code) > 30) $errors[] = 'Baris ' . $line . ': kode mata kuliah wajib diisi (maksimal 30 karakter).';
+        elseif (isset($seen[$code])) $errors[] = 'Baris ' . $line . ': kode ' . $code . ' ganda.';
+        if ($name === '' || mb_strlen($name) > 200) $errors[] = 'Baris ' . $line . ': nama mata kuliah wajib diisi (maksimal 200 karakter).';
+        if ($credits === false || $credits <= 0 || $credits > 20) $errors[] = 'Baris ' . $line . ': SKS harus angka lebih dari 0 sampai 20.';
+        $seen[$code] = true;
+        $clean[] = ['position'=>count($clean) + 1, 'course_code'=>$code, 'course_name'=>$name, 'credits'=>(float) $credits];
+    }
+    if ($errors) throw new DomainException(implode(' ', array_slice($errors, 0, 20)) . (count($errors) > 20 ? ' (dan ' . (count($errors) - 20) . ' masalah lain)' : ''));
+    return $clean;
+}
+
+function raw_curriculum_rows(array $source): array
+{
+    $codes = array_values((array) ($source['course_code'] ?? []));
+    $names = array_values((array) ($source['course_name'] ?? []));
+    $credits = array_values((array) ($source['credits'] ?? []));
+    $rows = [];
+    foreach ($codes as $index => $code) $rows[] = ['course_code'=>trim((string) $code), 'course_name'=>trim((string) ($names[$index] ?? '')), 'credits'=>trim((string) ($credits[$index] ?? ''))];
+    return $rows;
+}
+
+function curriculum_rows_from_form(array $source): array
+{
+    return validated_curriculum_rows(raw_curriculum_rows($source));
+}
+
+function save_curriculum(string $program, array $rows): void
+{
+    if (!array_key_exists($program, programs())) throw new DomainException('Program studi tidak dikenal.');
+    $db = db();
+    $db->beginTransaction();
+    try {
+        $db->prepare('DELETE FROM curriculum_courses WHERE program_code=?')->execute([$program]);
+        $stmt = $db->prepare('INSERT INTO curriculum_courses(program_code,position,course_code,course_name,credits) VALUES(?,?,?,?,?)');
+        foreach ($rows as $row) $stmt->execute([$program, $row['position'], $row['course_code'], $row['course_name'], $row['credits']]);
+        audit('curriculum', null, 'saved', $program . ': ' . count($rows) . ' mata kuliah');
+        $db->commit();
+    } catch (Throwable $e) {
+        $db->rollBack();
+        throw $e;
+    }
+}
+
+// Menyimpan nilai huruf satu mahasiswa berdasarkan kurikulum prodinya. Nilai di luar kurikulum dipertahankan di akhir daftar.
+function save_grade_sheet(int $graduateId, array $letters): int
+{
+    $graduate = find_graduate($graduateId);
+    if (!$graduate) throw new DomainException('Lulusan tidak ditemukan.');
+    assert_grades_editable($graduateId);
+    $curriculum = curriculum_for($graduate['program_code']);
+    if (!$curriculum) throw new DomainException('Kurikulum prodi ini belum diatur. Isi daftar mata kuliah di menu Kurikulum lebih dahulu.');
+    $scale = grade_scale();
+    $rows = [];
+    $errors = [];
+    foreach ($curriculum as $course) {
+        $letter = strtoupper(trim((string) ($letters[$course['course_code']] ?? '')));
+        if ($letter === '') continue;
+        if (!array_key_exists($letter, $scale)) {
+            $errors[] = $course['course_code'] . ': nilai huruf "' . $letter . '" tidak ada di skala nilai.';
+            continue;
+        }
+        $rows[] = [$course['position'], $course['course_code'], $course['course_name'], $course['credits'], $letter, $scale[$letter]];
+    }
+    if ($errors) throw new DomainException(implode(' ', $errors));
+    $codes = array_column($curriculum, 'course_code');
+    $outside = array_values(array_filter(grades_for($graduateId), static fn($grade) => !in_array($grade['course_code'], $codes, true)));
+    $db = db();
+    $db->beginTransaction();
+    try {
+        $db->prepare('DELETE FROM grades WHERE graduate_id=?')->execute([$graduateId]);
+        $stmt = $db->prepare('INSERT INTO grades(graduate_id,position,course_code,course_name,group_name,credits,grade_letter,grade_weight) VALUES(?,?,?,?,?,?,?,?)');
+        foreach ($rows as [$position, $code, $name, $credits, $letter, $weight]) $stmt->execute([$graduateId, $position, $code, $name, '', $credits, $letter, $weight]);
+        foreach ($outside as $index => $grade) $stmt->execute([$graduateId, 10000 + $index, $grade['course_code'], $grade['course_name'], $grade['group_name'], $grade['credits'], $grade['grade_letter'], $grade['grade_weight']]);
+        audit('graduate', $graduateId, 'grade_sheet_saved', count($rows) . ' nilai');
+        $db->commit();
+    } catch (Throwable $e) {
+        $db->rollBack();
+        throw $e;
+    }
+    return count($rows);
+}
+
+function list_grade_overview(string $search = ''): array
+{
+    $stmt = db()->prepare('SELECT g.*, COUNT(gr.id) AS grade_count, COALESCE(SUM(gr.credits),0) AS credits, COALESCE(SUM(gr.credits*gr.grade_weight),0) AS quality,
+        (SELECT COUNT(*) FROM curriculum_courses c WHERE c.program_code=g.program_code) AS curriculum_count,
+        EXISTS(SELECT 1 FROM documents d WHERE d.graduate_id=g.id AND d.kind=\'transcript\' AND d.status=\'issued\') AS transcript_issued
+        FROM graduates g LEFT JOIN grades gr ON gr.graduate_id=g.id
+        WHERE ?=\'\' OR g.nim LIKE ? OR g.name LIKE ? GROUP BY g.id ORDER BY g.name LIMIT 300');
+    $like = '%' . $search . '%';
+    $stmt->execute([$search, $like, $like]);
+    return $stmt->fetchAll();
+}
+
 function has_official_totals(array $graduate): bool
 {
     foreach (['official_credits','official_gpa'] as $key) {
@@ -395,8 +562,7 @@ function issue_document(int $graduateId, string $kind): int
     if ($kind === 'transcript' && !$grades) throw new DomainException('Nilai mata kuliah belum diisi.');
     if ($kind === 'transcript' && !has_official_totals($graduate)) throw new DomainException('Total SKS dan IPK resmi belum diisi.');
     if ($kind === 'transcript') {
-        $summary = grade_summary($grades);
-        if (abs($summary['credits'] - (float) $graduate['official_credits']) > 0.001 || abs($summary['gpa'] - (float) $graduate['official_gpa']) > 0.011) throw new DomainException('Jumlah SKS/IPK resmi tidak cocok dengan nilai mata kuliah. Periksa kembali data dan aturan nilai.');
+        if (official_totals_match(grade_summary($grades), $graduate) === false) throw new DomainException('Jumlah SKS/IPK resmi tidak cocok dengan nilai mata kuliah. Periksa kembali data dan aturan nilai.');
     }
     if ($kind === 'transcript' && ($template['settings']['signer_name'] ?? '') === '') throw new DomainException('Nama penandatangan transkrip belum diisi di template.');
     if ($kind === 'diploma' && (($template['settings']['texts']['left_name'] ?? '') === '' || ($template['settings']['texts']['right_name'] ?? '') === '')) throw new DomainException('Nama kedua penandatangan ijazah belum diisi di template.');

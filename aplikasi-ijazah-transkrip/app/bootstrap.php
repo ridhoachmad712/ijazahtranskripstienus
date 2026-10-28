@@ -94,6 +94,21 @@ CREATE TABLE IF NOT EXISTS grades (
  UNIQUE(graduate_id, course_code)
 );
 CREATE INDEX IF NOT EXISTS grades_graduate_position ON grades(graduate_id, position);
+CREATE TABLE IF NOT EXISTS curriculum_courses (
+ id INTEGER PRIMARY KEY AUTOINCREMENT,
+ program_code TEXT NOT NULL,
+ position INTEGER NOT NULL,
+ course_code TEXT NOT NULL,
+ course_name TEXT NOT NULL,
+ credits REAL NOT NULL,
+ UNIQUE(program_code, course_code)
+);
+CREATE INDEX IF NOT EXISTS curriculum_program_position ON curriculum_courses(program_code, position);
+CREATE TABLE IF NOT EXISTS grade_scale (
+ letter TEXT PRIMARY KEY,
+ weight REAL NOT NULL,
+ position INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS templates (
  id INTEGER PRIMARY KEY AUTOINCREMENT,
  kind TEXT NOT NULL CHECK(kind IN ('diploma','transcript')),
@@ -145,6 +160,7 @@ SQL);
     $db->exec("UPDATE graduates SET official_credits=NULL WHERE official_credits=''");
     $db->exec("UPDATE graduates SET official_gpa=NULL WHERE official_gpa=''");
     seed_templates($db);
+    seed_grade_scale($db);
 }
 
 function now_local(): string

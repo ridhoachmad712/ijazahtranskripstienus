@@ -5,14 +5,15 @@ function import_headers(string $kind): array
 {
     return match ($kind) {
         'graduates' => ['nim','nama_lengkap','tempat_lahir','tanggal_lahir','kode_prodi','program_pendidikan','tanggal_lulus','nomor_ijazah_nasional','nomor_transkrip','tanggal_terbit','judul_skripsi','total_sks_resmi','ipk_resmi'],
-        'grades' => ['nim','urutan','kode_mk','nama_mk','kelompok_mk','sks','nilai_huruf','bobot_nilai'],
         default => throw new DomainException('Template impor tidak ditemukan.'),
     };
 }
 
-function write_xls_template(string $kind, string $path): void
+const XLS_TEXT_COLUMNS = ['nim','kode_mk','nomor_ijazah_nasional','nomor_transkrip','tanggal_lahir','tanggal_lulus','tanggal_terbit','nilai_huruf'];
+
+// Menulis berkas .xls dengan sheet Data (baris 1 = nama kolom) dan sheet Petunjuk.
+function write_xls_book(string $path, array $headers, array $rows, string $title, array $instructions): void
 {
-    $headers = import_headers($kind);
     $book = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
     try {
         $sheet = $book->getActiveSheet();
@@ -21,9 +22,18 @@ function write_xls_template(string $kind, string $path): void
         foreach ($headers as $index => $header) {
             $column = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($index + 1);
             $sheet->setCellValueExplicit($column . '1', $header, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
-            $sheet->getColumnDimension($column)->setWidth(min(28, max(16, strlen($header) + 3)));
-            if (in_array($header, ['nim','kode_mk','nomor_ijazah_nasional','nomor_transkrip','tanggal_lahir','tanggal_lulus','tanggal_terbit'], true)) {
+            $sheet->getColumnDimension($column)->setWidth($header === 'nama_mk' ? 44 : min(28, max(12, strlen($header) + 3)));
+            if (in_array($header, XLS_TEXT_COLUMNS, true)) {
                 $sheet->getStyle($column . '2:' . $column . '10001')->getNumberFormat()->setFormatCode(\PhpOffice\PhpSpreadsheet\Style\NumberFormat::FORMAT_TEXT);
+            }
+        }
+        foreach ($rows as $rowIndex => $row) {
+            foreach ($headers as $index => $header) {
+                $value = $row[$header] ?? '';
+                if ($value === '' || $value === null) continue;
+                $cell = [$index + 1, $rowIndex + 2];
+                if (in_array($header, XLS_TEXT_COLUMNS, true) || !is_numeric($value)) $sheet->setCellValueExplicit($cell, (string) $value, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+                else $sheet->setCellValue($cell, $value + 0);
             }
         }
         $sheet->getStyle('A1:' . $lastColumn . '1')->applyFromArray([
@@ -39,15 +49,8 @@ function write_xls_template(string $kind, string $path): void
         $guide->setTitle('Petunjuk');
         $guide->getColumnDimension('A')->setWidth(7);
         $guide->getColumnDimension('B')->setWidth(92);
-        $guide->setCellValue('B2', $kind === 'graduates' ? 'Template data lulusan' : 'Template nilai mata kuliah');
+        $guide->setCellValue('B2', $title);
         $guide->getStyle('B2')->getFont()->setBold(true)->setSize(16)->getColor()->setRGB('1D6971');
-        $instructions = [
-            'Isi sheet Data mulai baris 2; jangan ubah nama kolom pada baris 1.',
-            'NIM dan nomor dokumen/kode mata kuliah harus tetap berupa teks agar nol di depan tidak hilang.',
-            'Tanggal ditulis YYYY-MM-DD. Angka desimal memakai titik, misalnya 3.50.',
-            $kind === 'graduates' ? 'Satu baris untuk setiap lulusan.' : 'Satu baris untuk setiap mata kuliah per lulusan.',
-            $kind === 'graduates' ? 'Impor data lulusan lebih dahulu melalui menu Impor lulusan.' : 'NIM harus sudah tersimpan di Data lulusan sebelum berkas nilai diimpor.',
-        ];
         foreach ($instructions as $index => $instruction) {
             $guide->setCellValue('A' . ($index + 4), $index + 1);
             $guide->setCellValue('B' . ($index + 4), $instruction);
@@ -57,6 +60,100 @@ function write_xls_template(string $kind, string $path): void
     } finally {
         $book->disconnectWorksheets();
     }
+}
+
+function send_xls(string $filename, callable $writer): void
+{
+    $temporary = tempnam(sys_get_temp_dir(), 'stie-xls-');
+    if ($temporary === false) throw new RuntimeException('Template Excel gagal disiapkan.');
+    try {
+        $writer($temporary);
+        header('Content-Type: application/vnd.ms-excel');
+        header('Content-Disposition: attachment; filename="' . $filename . '"');
+        header('Content-Length: ' . filesize($temporary));
+        readfile($temporary);
+    } finally {
+        unlink($temporary);
+    }
+}
+
+function write_xls_template(string $kind, string $path): void
+{
+    write_xls_book($path, import_headers($kind), [], 'Template data lulusan', [
+        'Isi sheet Data mulai baris 2; jangan ubah nama kolom pada baris 1.',
+        'NIM dan nomor dokumen harus tetap berupa teks agar nol di depan tidak hilang.',
+        'Tanggal ditulis YYYY-MM-DD. Angka desimal memakai titik, misalnya 3.50.',
+        'Satu baris untuk setiap lulusan.',
+        'Setelah lulusan tersimpan, nilai diisi per mahasiswa melalui menu Nilai.',
+    ]);
+}
+
+function write_curriculum_template(string $program, string $path): void
+{
+    $rows = array_map(static fn($course) => ['kode_mk'=>$course['course_code'], 'nama_mk'=>$course['course_name'], 'sks'=>$course['credits']], curriculum_for($program));
+    write_xls_book($path, ['kode_mk','nama_mk','sks'], $rows, 'Kurikulum ' . (programs()[$program]['label'] ?? $program), [
+        'Satu baris untuk setiap mata kuliah. Urutan baris menjadi urutan mata kuliah pada transkrip.',
+        'Kolom kode_mk berupa teks agar nol di depan tidak hilang. SKS berupa angka, misalnya 3.',
+        'Jangan ubah nama kolom pada baris 1. Hapus baris yang tidak dipakai.',
+        'Mengimpor berkas ini mengganti seluruh daftar mata kuliah prodi setelah Anda memeriksa dan menekan Simpan kurikulum.',
+    ]);
+}
+
+function write_grade_sheet_template(array $graduate, string $path): void
+{
+    $letters = [];
+    foreach (grades_for((int) $graduate['id']) as $grade) $letters[$grade['course_code']] = $grade['grade_letter'];
+    $rows = array_map(static fn($course) => [
+        'nim'=>$graduate['nim'], 'urutan'=>$course['position'], 'kode_mk'=>$course['course_code'], 'nama_mk'=>$course['course_name'],
+        'sks'=>$course['credits'], 'nilai_huruf'=>$letters[$course['course_code']] ?? '',
+    ], curriculum_for($graduate['program_code']));
+    write_xls_book($path, ['nim','urutan','kode_mk','nama_mk','sks','nilai_huruf'], $rows, 'Nilai ' . $graduate['name'] . ' (NIM ' . $graduate['nim'] . ')', [
+        'Cukup isi kolom nilai_huruf. Kolom lain berasal dari kurikulum prodi dan tidak dipakai saat impor.',
+        'Nilai huruf yang diterima: ' . implode(', ', array_keys(grade_scale())) . '. Kosongkan jika mata kuliah tidak diambil.',
+        'Berkas ini khusus untuk NIM ' . $graduate['nim'] . '. Berkas dengan NIM lain akan ditolak.',
+        'Hasil impor tampil di halaman nilai mahasiswa dan baru tersimpan setelah Anda menekan Simpan nilai.',
+    ]);
+}
+
+function curriculum_rows_from_upload(array $file): array
+{
+    return curriculum_rows_from_import(read_import_upload($file, ['kode_mk','nama_mk','sks']));
+}
+
+function curriculum_rows_from_import(array $rows): array
+{
+    if (!$rows) throw new DomainException('Berkas kurikulum belum berisi mata kuliah.');
+    return validated_curriculum_rows(array_map(static fn($row) => ['course_code'=>$row['kode_mk'], 'course_name'=>$row['nama_mk'], 'credits'=>$row['sks'], '_line'=>$row['_line']], $rows));
+}
+
+// Mengembalikan nilai huruf per kode MK dari berkas; kode yang tidak ada di berkas tidak diubah.
+function grade_letters_from_upload(array $graduate, array $file): array
+{
+    return grade_letters_from_import($graduate, read_import_upload($file, ['kode_mk','nilai_huruf']));
+}
+
+function grade_letters_from_import(array $graduate, array $rows): array
+{
+    $curriculum = array_column(curriculum_for($graduate['program_code']), null, 'course_code');
+    $scale = grade_scale();
+    $letters = [];
+    $errors = [];
+    foreach ($rows as $row) {
+        $line = $row['_line'];
+        if (($row['nim'] ?? '') !== '' && $row['nim'] !== $graduate['nim']) {
+            $errors[] = 'Baris ' . $line . ': NIM ' . $row['nim'] . ' bukan milik ' . $graduate['name'] . '.';
+            continue;
+        }
+        $code = $row['kode_mk'];
+        $letter = strtoupper(trim($row['nilai_huruf']));
+        if (!isset($curriculum[$code])) $errors[] = 'Baris ' . $line . ': kode ' . $code . ' tidak ada di kurikulum prodi.';
+        elseif (array_key_exists($code, $letters)) $errors[] = 'Baris ' . $line . ': kode ' . $code . ' ganda.';
+        elseif ($letter !== '' && !array_key_exists($letter, $scale)) $errors[] = 'Baris ' . $line . ': nilai huruf "' . $letter . '" tidak ada di skala nilai.';
+        else $letters[$code] = $letter;
+    }
+    if (!$rows) $errors[] = 'Berkas nilai belum berisi data.';
+    if ($errors) throw new DomainException(implode(' ', array_slice($errors, 0, 20)) . (count($errors) > 20 ? ' (dan ' . (count($errors) - 20) . ' masalah lain)' : ''));
+    return $letters;
 }
 
 function read_import_upload(array $file, array $requiredHeaders): array
@@ -169,73 +266,36 @@ function read_csv_upload(array $file, array $requiredHeaders): array
 
 function make_import_preview(array $file, string $kind): array
 {
-    if (!in_array($kind, ['graduates', 'grades'], true)) throw new DomainException('Jenis impor tidak dikenal.');
-    $required = $kind === 'graduates'
-        ? ['nim','nama_lengkap','tempat_lahir','tanggal_lahir','kode_prodi','tanggal_lulus','nomor_ijazah_nasional','nomor_transkrip','tanggal_terbit','total_sks_resmi','ipk_resmi']
-        : ['nim','urutan','kode_mk','nama_mk','sks','nilai_huruf','bobot_nilai'];
-    $rows = read_import_upload($file, $required);
+    if ($kind !== 'graduates') throw new DomainException('Jenis impor tidak dikenal.');
+    $rows = read_import_upload($file, ['nim','nama_lengkap','tempat_lahir','tanggal_lahir','kode_prodi','tanggal_lulus','nomor_ijazah_nasional','nomor_transkrip','tanggal_terbit','total_sks_resmi','ipk_resmi']);
     return make_import_preview_from_rows($rows, $kind);
 }
 
 function make_import_preview_from_rows(array $rows, string $kind): array
 {
-    if (!in_array($kind, ['graduates', 'grades'], true)) throw new DomainException('Jenis impor tidak dikenal.');
+    if ($kind !== 'graduates') throw new DomainException('Jenis impor tidak dikenal.');
     $errors = [];
-    if (!$rows) $errors[] = $kind === 'graduates' ? 'Berkas lulusan belum berisi data.' : 'Berkas nilai belum berisi data.';
+    if (!$rows) $errors[] = 'Berkas lulusan belum berisi data.';
     $mapped = [];
     $seen = [];
-    if ($kind === 'graduates') {
-        foreach ($rows as $row) {
-            $data = graduate_input([
-                'nim'=>$row['nim'], 'name'=>$row['nama_lengkap'], 'birth_place'=>$row['tempat_lahir'],
-                'birth_date'=>$row['tanggal_lahir'], 'program_code'=>strtoupper($row['kode_prodi']),
-                'education_program'=>$row['program_pendidikan'] ?? 'S1', 'graduation_date'=>$row['tanggal_lulus'],
-                'diploma_number'=>$row['nomor_ijazah_nasional'], 'transcript_number'=>$row['nomor_transkrip'],
-                'issue_date'=>$row['tanggal_terbit'], 'thesis_title'=>$row['judul_skripsi'] ?? '',
-                'official_credits'=>$row['total_sks_resmi'], 'official_gpa'=>$row['ipk_resmi'],
-            ]);
-            $nim = $data['nim'];
-            if (isset($seen[$nim])) $errors[] = 'Lulusan baris ' . $row['_line'] . ': NIM ganda dalam berkas.';
-            $seen[$nim] = true;
-            $existing = find_graduate_by_nim($nim);
-            foreach (graduate_errors($data, $existing ? (int) $existing['id'] : null) as $error) $errors[] = 'Lulusan baris ' . $row['_line'] . ': ' . $error;
-            if ($existing && graduate_has_issued_document((int) $existing['id'])) $errors[] = 'Lulusan baris ' . $row['_line'] . ': ada dokumen aktif; impor tidak boleh mengubah data ini.';
-            $mapped[$nim] = $data;
-        }
+    foreach ($rows as $row) {
+        $data = graduate_input([
+            'nim'=>$row['nim'], 'name'=>$row['nama_lengkap'], 'birth_place'=>$row['tempat_lahir'],
+            'birth_date'=>$row['tanggal_lahir'], 'program_code'=>strtoupper($row['kode_prodi']),
+            'education_program'=>$row['program_pendidikan'] ?? 'S1', 'graduation_date'=>$row['tanggal_lulus'],
+            'diploma_number'=>$row['nomor_ijazah_nasional'], 'transcript_number'=>$row['nomor_transkrip'],
+            'issue_date'=>$row['tanggal_terbit'], 'thesis_title'=>$row['judul_skripsi'] ?? '',
+            'official_credits'=>$row['total_sks_resmi'], 'official_gpa'=>$row['ipk_resmi'],
+        ]);
+        $nim = $data['nim'];
+        if (isset($seen[$nim])) $errors[] = 'Lulusan baris ' . $row['_line'] . ': NIM ganda dalam berkas.';
+        $seen[$nim] = true;
+        $existing = find_graduate_by_nim($nim);
+        foreach (graduate_errors($data, $existing ? (int) $existing['id'] : null) as $error) $errors[] = 'Lulusan baris ' . $row['_line'] . ': ' . $error;
+        if ($existing && graduate_has_issued_document((int) $existing['id'])) $errors[] = 'Lulusan baris ' . $row['_line'] . ': ada dokumen aktif; impor tidak boleh mengubah data ini.';
+        $mapped[$nim] = $data;
     }
-    $gradeMap = [];
-    $gradeSeen = [];
-    if ($kind === 'grades') {
-        $graduateCache = [];
-        foreach ($rows as $row) {
-            $nim = $row['nim'];
-            if (!array_key_exists($nim, $graduateCache)) {
-                $graduateCache[$nim] = find_graduate_by_nim($nim);
-                if (!$graduateCache[$nim]) $errors[] = 'Nilai baris ' . $row['_line'] . ': NIM belum ada di Data lulusan.';
-                elseif (graduate_has_issued_document((int) $graduateCache[$nim]['id'], 'transcript')) $errors[] = 'NIM ' . $nim . ': ada transkrip aktif; nilai tidak boleh diimpor ulang.';
-            }
-            $key = $nim . ':' . $row['kode_mk'];
-            if (isset($gradeSeen[$key])) $errors[] = 'Nilai baris ' . $row['_line'] . ': kode MK ganda untuk NIM tersebut.';
-            $gradeSeen[$key] = true;
-            $credits = filter_var($row['sks'], FILTER_VALIDATE_FLOAT);
-            $weight = filter_var($row['bobot_nilai'], FILTER_VALIDATE_FLOAT);
-            $position = filter_var($row['urutan'], FILTER_VALIDATE_INT);
-            if ($nim === '' || $row['kode_mk'] === '' || $row['nama_mk'] === '' || $row['nilai_huruf'] === '' || $position === false || $position < 1 || $credits === false || $credits <= 0 || $credits > 20 || $weight === false || $weight < 0 || $weight > 4) $errors[] = 'Nilai baris ' . $row['_line'] . ': data mata kuliah/nilai tidak valid.';
-            $gradeMap[$nim][] = [
-                'position'=>$row['urutan'],'course_code'=>$row['kode_mk'],'course_name'=>$row['nama_mk'],
-                'group_name'=>$row['kelompok_mk'] ?? '', 'credits'=>$row['sks'],
-                'grade_letter'=>$row['nilai_huruf'],'grade_weight'=>$row['bobot_nilai'],
-            ];
-        }
-        foreach ($gradeMap as $nim => $studentGrades) {
-            $graduate = $graduateCache[$nim];
-            if ($graduate && has_official_totals($graduate)) {
-                $summary = grade_summary($studentGrades);
-                if (abs($summary['credits'] - (float) $graduate['official_credits']) > 0.001 || abs($summary['gpa'] - (float) $graduate['official_gpa']) > 0.011) $errors[] = 'NIM ' . $nim . ': total SKS/IPK resmi tidak cocok dengan berkas nilai.';
-            }
-        }
-    }
-    return ['kind'=>$kind,'graduates'=>$mapped,'grades'=>$gradeMap,'errors'=>array_slice($errors,0,200),'graduate_count'=>count($mapped),'grade_count'=>$kind === 'grades' ? count($rows) : 0,'created_at'=>now_local()];
+    return ['kind'=>$kind,'graduates'=>$mapped,'errors'=>array_slice($errors,0,200),'graduate_count'=>count($mapped),'created_at'=>now_local()];
 }
 
 function save_import_preview(array $preview): string
@@ -265,27 +325,12 @@ function commit_import(string $kind): array
     $db = db();
     $db->beginTransaction();
     try {
-        if ($kind === 'graduates') {
-            foreach ($preview['graduates'] as $nim => $graduateData) {
-                $existing = find_graduate_by_nim((string) $nim);
-                if ($existing && graduate_has_issued_document((int) $existing['id'])) throw new DomainException('NIM ' . $nim . ': ada dokumen aktif; data tidak dapat ditimpa.');
-                save_graduate($graduateData, $existing ? (int) $existing['id'] : null);
-            }
-        } else {
-            foreach ($preview['grades'] as $nim => $grades) {
-                $graduate = find_graduate_by_nim((string) $nim);
-                if (!$graduate) throw new DomainException('NIM ' . $nim . ' belum ada di Data lulusan. Periksa kembali berkas nilai.');
-                $id = (int) $graduate['id'];
-                if (graduate_has_issued_document($id, 'transcript')) throw new DomainException('NIM ' . $nim . ': ada transkrip aktif; nilai tidak dapat ditimpa.');
-                if (has_official_totals($graduate)) {
-                    $summary = grade_summary($grades);
-                    if (abs($summary['credits'] - (float) $graduate['official_credits']) > 0.001 || abs($summary['gpa'] - (float) $graduate['official_gpa']) > 0.011) throw new DomainException('NIM ' . $nim . ': total SKS/IPK resmi tidak cocok dengan berkas nilai.');
-                }
-                $db->prepare('DELETE FROM grades WHERE graduate_id=?')->execute([$id]);
-                foreach ($grades as $grade) save_grade($id, $grade);
-            }
+        foreach ($preview['graduates'] as $nim => $graduateData) {
+            $existing = find_graduate_by_nim((string) $nim);
+            if ($existing && graduate_has_issued_document((int) $existing['id'])) throw new DomainException('NIM ' . $nim . ': ada dokumen aktif; data tidak dapat ditimpa.');
+            save_graduate($graduateData, $existing ? (int) $existing['id'] : null);
         }
-        audit('import', null, 'committed', $kind . ': ' . $preview['graduate_count'] . ' lulusan; ' . $preview['grade_count'] . ' nilai');
+        audit('import', null, 'committed', $kind . ': ' . $preview['graduate_count'] . ' lulusan');
         $db->commit();
     } catch (Throwable $e) {
         $db->rollBack();

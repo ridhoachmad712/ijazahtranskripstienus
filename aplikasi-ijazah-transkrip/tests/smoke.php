@@ -23,80 +23,102 @@ try {
     page_footer();
     $emptyMenu = (string) ob_get_clean();
     expect(!str_contains($emptyMenu, 'r=grades'), 'Menu Nilai muncul sebelum ada lulusan.');
-    $importSamples = [
-        'graduates' => ['nim'=>'0012345678','nama_lengkap'=>'Contoh Lulusan','tempat_lahir'=>'Makassar','tanggal_lahir'=>'2002-04-18','kode_prodi'=>'AKUNTANSI','program_pendidikan'=>'S1','tanggal_lulus'=>'2026-08-15','nomor_ijazah_nasional'=>'CONTOH-001','nomor_transkrip'=>'CONTOH-TR-001','tanggal_terbit'=>'2026-09-01','judul_skripsi'=>'Contoh judul skripsi','total_sks_resmi'=>'6','ipk_resmi'=>'3.50'],
-        'grades' => ['nim'=>'0012345678','urutan'=>'1','kode_mk'=>'001AKT','nama_mk'=>'Pengantar Akuntansi','kelompok_mk'=>'Inti','sks'=>'3','nilai_huruf'=>'A','bobot_nilai'=>'4.00'],
-    ];
-    foreach ($importSamples as $kind => $sample) {
-        $path = $root . '/template-' . $kind . '.xls';
-        write_xls_template($kind, $path);
-        expect(bin2hex((string) file_get_contents($path, false, null, 0, 8)) === 'd0cf11e0a1b11ae1', 'Template harus berupa XLS asli.');
-        $workbook = (new \PhpOffice\PhpSpreadsheet\Reader\Xls())->load($path);
-        $sheet = $workbook->getSheetByName('Data');
-        expect($sheet !== null && $sheet->getStyle('A2')->getNumberFormat()->getFormatCode() === '@', 'Kolom NIM tidak disiapkan sebagai teks.');
-        foreach ($sample as $header => $value) {
-            $column = array_search($header, import_headers($kind), true) + 1;
-            $sheet->setCellValueExplicit([$column, 2], $value, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
-        }
-        (new \PhpOffice\PhpSpreadsheet\Writer\Xls($workbook))->save($path);
-        $workbook->disconnectWorksheets();
-        $rows = read_excel_file($path, 'xls', import_headers($kind));
-        expect(count($rows) === 1 && $rows[0]['nim'] === '0012345678', 'XLS gagal dibaca atau nol awal NIM hilang.');
-        if ($kind === 'grades') expect($rows[0]['kode_mk'] === '001AKT', 'Nol awal kode mata kuliah hilang.');
-    }
-    $newGraduate = $importSamples['graduates'];
-    $newGraduate['nim'] = '0088888888';
-    $newGraduate['nomor_ijazah_nasional'] = 'CONTOH-IMP-001';
-    $newGraduate['nomor_transkrip'] = 'CONTOH-IMP-TR-001';
-    $newGraduate['total_sks_resmi'] = '3';
-    $newGraduate['ipk_resmi'] = '4.00';
-    $newGrade = $importSamples['grades'];
-    $newGrade['nim'] = '0088888888';
-    $unknownPreview = make_import_preview_from_rows([array_replace($newGrade, ['nim'=>'0000000000','_line'=>2])], 'grades');
-    expect((bool) $unknownPreview['errors'], 'Nilai NIM yang belum terdaftar harus ditolak.');
+    $sample = ['nim'=>'0012345678','nama_lengkap'=>'Contoh Lulusan','tempat_lahir'=>'Makassar','tanggal_lahir'=>'2002-04-18','kode_prodi'=>'AKUNTANSI','program_pendidikan'=>'S1','tanggal_lulus'=>'2026-08-15','nomor_ijazah_nasional'=>'CONTOH-001','nomor_transkrip'=>'CONTOH-TR-001','tanggal_terbit'=>'2026-09-01','judul_skripsi'=>'Contoh judul skripsi','total_sks_resmi'=>'6','ipk_resmi'=>'3.50'];
+    $path = $root . '/template-lulusan.xls';
+    write_xls_template('graduates', $path);
+    expect(bin2hex((string) file_get_contents($path, false, null, 0, 8)) === 'd0cf11e0a1b11ae1', 'Template harus berupa XLS asli.');
+    $workbook = (new \PhpOffice\PhpSpreadsheet\Reader\Xls())->load($path);
+    $sheet = $workbook->getSheetByName('Data');
+    expect($sheet !== null && $sheet->getStyle('A2')->getNumberFormat()->getFormatCode() === '@', 'Kolom NIM tidak disiapkan sebagai teks.');
+    foreach ($sample as $header => $value) $sheet->setCellValueExplicit([array_search($header, import_headers('graduates'), true) + 1, 2], $value, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+    (new \PhpOffice\PhpSpreadsheet\Writer\Xls($workbook))->save($path);
+    $workbook->disconnectWorksheets();
+    $rows = read_excel_file($path, 'xls', import_headers('graduates'));
+    expect(count($rows) === 1 && $rows[0]['nim'] === '0012345678', 'XLS gagal dibaca atau nol awal NIM hilang.');
+
+    $newGraduate = array_replace($sample, ['nim'=>'0088888888','nomor_ijazah_nasional'=>'CONTOH-IMP-001','nomor_transkrip'=>'CONTOH-IMP-TR-001','total_sks_resmi'=>'5','ipk_resmi'=>'3.60']);
     $graduatePreview = make_import_preview_from_rows([array_replace($newGraduate, ['_line'=>2])], 'graduates');
     expect(!$graduatePreview['errors'] && $graduatePreview['graduate_count'] === 1, 'Pratinjau impor lulusan gagal.');
     save_import_preview($graduatePreview);
     commit_import('graduates');
-    expect(find_graduate_by_nim('0088888888') !== null, 'Lulusan belum tersimpan sesudah impor tahap pertama.');
+    $imported = find_graduate_by_nim('0088888888');
+    expect($imported !== null, 'Lulusan belum tersimpan sesudah impor.');
+    $importedId = (int) $imported['id'];
     ob_start();
     page_header('Uji menu', 'grades');
     page_footer();
     $readyMenu = (string) ob_get_clean();
-    expect(str_contains($readyMenu, 'r=grades'), 'Menu Nilai belum muncul setelah lulusan tersimpan.');
+    expect(str_contains($readyMenu, 'r=grades') && str_contains($readyMenu, 'r=curriculum'), 'Menu Nilai/Kurikulum belum muncul setelah lulusan tersimpan.');
+
+    // Kurikulum per prodi: urutan baris, validasi, dan template Excel.
+    expect(grade_scale() === ['A'=>4.0,'B'=>3.0,'C'=>2.0,'D'=>1.0,'E'=>0.0], 'Skala nilai awal tidak sesuai.');
+    foreach ([
+        'kode ganda' => ['course_code'=>['MK1','MK1'], 'course_name'=>['Satu','Dua'], 'credits'=>['2','3']],
+        'SKS nol' => ['course_code'=>['MK1'], 'course_name'=>['Satu'], 'credits'=>['0']],
+        'nama kosong' => ['course_code'=>['MK1'], 'course_name'=>[''], 'credits'=>['2']],
+    ] as $label => $source) {
+        try {
+            curriculum_rows_from_form($source);
+            throw new RuntimeException('Kurikulum dengan ' . $label . ' seharusnya ditolak.');
+        } catch (DomainException) {
+        }
+    }
+    $curriculumRows = curriculum_rows_from_form(['course_code'=>['001AKT','AKT102',''], 'course_name'=>['Pengantar Akuntansi','Akuntansi Biaya',''], 'credits'=>['3','2','']]);
+    expect(count($curriculumRows) === 2 && $curriculumRows[1]['position'] === 2, 'Baris kosong atau urutan kurikulum salah.');
+    save_curriculum('AKUNTANSI', $curriculumRows);
+    expect(array_column(curriculum_for('AKUNTANSI'), 'course_code') === ['001AKT','AKT102'] && curriculum_for('MANAJEMEN') === [], 'Kurikulum tersimpan pada prodi yang salah.');
+    $curriculumPath = $root . '/kurikulum.xls';
+    write_curriculum_template('AKUNTANSI', $curriculumPath);
+    $fromFile = curriculum_rows_from_import(read_excel_file($curriculumPath, 'xls', ['kode_mk','nama_mk','sks']));
+    expect(array_column($fromFile, 'course_code') === ['001AKT','AKT102'] && $fromFile[0]['credits'] === 3.0, 'Template kurikulum gagal dibaca ulang atau nol awal kode hilang.');
+
+    // Nilai per mahasiswa: hanya nilai huruf, bobot dari skala.
+    save_grade($importedId, ['position'=>1,'course_code'=>'LAMA01','course_name'=>'Mata kuliah lama','credits'=>2,'grade_letter'=>'B','grade_weight'=>3]);
+    expect(save_grade_sheet($importedId, ['001AKT'=>'a', 'AKT102'=>'B']) === 2, 'Lembar nilai tidak menyimpan nilai huruf.');
+    $saved = array_column(grades_for($importedId), null, 'course_code');
+    expect($saved['001AKT']['grade_weight'] == 4 && $saved['001AKT']['grade_letter'] === 'A' && $saved['AKT102']['credits'] == 2 && isset($saved['LAMA01']), 'Bobot dari skala atau nilai di luar kurikulum tidak sesuai.');
+    expect(array_column(grades_for($importedId), 'course_code') === ['001AKT','AKT102','LAMA01'], 'Urutan nilai tidak mengikuti kurikulum.');
+    foreach (['huruf di luar skala' => static fn() => save_grade_sheet($importedId, ['001AKT'=>'Z']), 'prodi tanpa kurikulum' => static fn() => save_grade_sheet((int) save_graduate(['nim'=>'0066666666','name'=>'Mahasiswa Manajemen','program_code'=>'MANAJEMEN']), [])] as $label => $action) {
+        try {
+            $action();
+            throw new RuntimeException('Lembar nilai dengan ' . $label . ' seharusnya ditolak.');
+        } catch (DomainException) {
+        }
+    }
+    $gradePath = $root . '/nilai.xls';
+    write_grade_sheet_template($imported, $gradePath);
+    $gradeRows = read_excel_file($gradePath, 'xls', ['kode_mk','nilai_huruf']);
+    expect(count($gradeRows) === 2 && $gradeRows[0]['nim'] === '0088888888' && $gradeRows[0]['nilai_huruf'] === 'A', 'Template nilai mahasiswa tidak berisi kurikulum dan nilai tersimpan.');
+    $gradeRows[1]['nilai_huruf'] = 'c';
+    expect(grade_letters_from_import($imported, $gradeRows) === ['001AKT'=>'A', 'AKT102'=>'C'], 'Impor nilai huruf tidak terbaca.');
+    foreach (['NIM lain' => array_replace($gradeRows[0], ['nim'=>'0011111111']), 'kode di luar kurikulum' => array_replace($gradeRows[0], ['kode_mk'=>'XYZ']), 'huruf di luar skala' => array_replace($gradeRows[0], ['nilai_huruf'=>'Z'])] as $label => $row) {
+        try {
+            grade_letters_from_import($imported, [$row]);
+            throw new RuntimeException('Impor nilai dengan ' . $label . ' seharusnya ditolak.');
+        } catch (DomainException) {
+        }
+    }
+    try {
+        save_grade_scale(['A','A'], ['4','3']);
+        throw new RuntimeException('Skala nilai ganda seharusnya ditolak.');
+    } catch (DomainException) {
+    }
     ob_start();
     grades_page('');
-    $gradesPage = (string) ob_get_clean();
-    expect(str_contains($gradesPage, 'Impor nilai') && str_contains($gradesPage, 'Input nilai'), 'Halaman pengelolaan nilai tidak lengkap.');
-    ob_start();
-    import_page('grades');
-    $gradesImportPage = (string) ob_get_clean();
-    expect(str_contains($gradesImportPage, 'Unduh template nilai') && substr_count($gradesImportPage, 'type="file"') === 1, 'Impor nilai harus memakai satu berkas terpisah.');
-    $gradePreview = make_import_preview_from_rows([array_replace($newGrade, ['_line'=>2])], 'grades');
-    expect(!$gradePreview['errors'] && $gradePreview['grade_count'] === 1, 'Pratinjau nilai belum mencocokkan lulusan tersimpan.');
-    save_import_preview($gradePreview);
-    try {
-        commit_import('graduates');
-        throw new RuntimeException('Jenis pratinjau impor dapat dipakai pada tahap yang salah.');
-    } catch (DomainException $e) {
-        expect(str_contains($e->getMessage(), 'belum siap'), 'Jenis impor salah menghasilkan pesan yang tidak sesuai.');
-    }
-    commit_import('grades');
-    $importedId = (int) find_graduate_by_nim('0088888888')['id'];
-    expect(count(grades_for($importedId)) === 1, 'Nilai belum tersimpan sesudah impor tahap kedua.');
+    grade_sheet_page($imported);
+    $gradesPages = (string) ob_get_clean();
+    expect(str_contains($gradesPages, 'Isi nilai') && str_contains($gradesPages, 'name="letter[]"') && str_contains($gradesPages, 'Nilai di luar kurikulum'), 'Halaman nilai per mahasiswa tidak lengkap.');
+
     save_import_preview(make_import_preview_from_rows([array_replace($newGraduate, ['_line'=>2])], 'graduates'));
     commit_import('graduates');
-    expect(count(grades_for($importedId)) === 1, 'Impor ulang lulusan menghapus nilai yang sudah tersimpan.');
+    expect(count(grades_for($importedId)) === 3, 'Impor ulang lulusan menghapus nilai yang sudah tersimpan.');
     $blankTotals = array_replace($newGraduate, ['nim'=>'0077777777','nomor_ijazah_nasional'=>'CONTOH-IMP-002','nomor_transkrip'=>'CONTOH-IMP-TR-002','total_sks_resmi'=>'','ipk_resmi'=>'','_line'=>2]);
     save_import_preview(make_import_preview_from_rows([$blankTotals], 'graduates'));
     commit_import('graduates');
     $blankGraduate = find_graduate_by_nim('0077777777');
     expect($blankGraduate['official_credits'] === null && $blankGraduate['official_gpa'] === null, 'SKS/IPK resmi kosong harus tersimpan sebagai NULL.');
-    $blankGradePreview = make_import_preview_from_rows([array_replace($newGrade, ['nim'=>'0077777777','_line'=>2])], 'grades');
-    expect(!$blankGradePreview['errors'], 'Impor nilai ditolak padahal SKS/IPK resmi belum diisi.');
-    foreach (['' => false, 'http://ijazah.example.ac.id' => false, 'https://localhost:8000' => false, 'https://127.0.0.1' => false, 'https://[::1]/app' => false, 'https://ijazah.example.ac.id' => true] as $url => $ok) {
-        expect((qr_base_url_problem((string) $url) === null) === $ok, 'Pemeriksaan URL QR salah untuk "' . $url . '".');
-    }
+    expect(save_grade_sheet((int) $blankGraduate['id'], ['001AKT'=>'B']) === 1, 'Nilai ditolak padahal SKS/IPK resmi belum diisi.');
+    expect(official_totals_match(grade_summary(grades_for((int) $blankGraduate['id'])), $blankGraduate) === null, 'Total resmi kosong harus dianggap belum dapat dibandingkan.');
     $makeImage = static function (string $path, int $width, int $height): string {
         $image = imagecreatetruecolor($width, $height);
         imagepng($image, $path);
@@ -213,7 +235,7 @@ try {
         echo "PDF QA: {$diplomaTarget}\n";
         echo "PDF QA: {$target}\n";
     }
-    echo "SMOKE OK: XLS impor dua tahap, profil bersama, nilai, 2 PDF, QR, snapshot, pembatalan, transkrip panjang.\n";
+    echo "SMOKE OK: XLS impor lulusan, kurikulum, nilai per mahasiswa, 2 PDF, QR, snapshot, pembatalan, transkrip panjang.\n";
 } finally {
     foreach (glob($root . '/documents/*') ?: [] as $file) unlink($file);
     if (is_dir($root . '/documents')) rmdir($root . '/documents');

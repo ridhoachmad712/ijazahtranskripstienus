@@ -31,11 +31,19 @@ Salin `config.example.php` menjadi `config.local.php`, lalu isi `base_url` denga
 
 1. Atur template ijazah dan transkrip per prodi, termasuk pejabat penandatangan. Editor menampilkan perubahan sebelum disimpan; pilih satu bidang teks untuk mengatur X/Y, lebar, ukuran huruf, dan perataan, atau geser bidang pada pratinjau A4. Pratinjau ijazah menyediakan grid 10 mm dan garis tengah. Saat digeser mendekati garis, bidang menempel otomatis; penanda hijau menyatakan teks sudah tepat di tengah. Nonaktifkan **Grid 10 mm + magnet** atau gunakan tombol panah untuk penyesuaian halus. Garis bantu hanya terlihat di editor. PDF hanya dibuat saat tombol **Buka PDF saat ini** diklik, menggunakan isian yang belum disimpan. Logo/nama kampus/latar blanko **tidak dicetak ulang**.
 2. Tambah profil lulusan satu per satu atau impor template lulusan melalui menu **Impor lulusan**. Nomor dan NIM diperlakukan sebagai teks. Nilai belum diperlukan pada tahap ini.
-3. Setelah sedikitnya satu lulusan tersimpan, menu **Nilai** muncul. Pilih lulusan untuk input nilai satu per satu, atau buka **Impor nilai** dan unggah template nilai. NIM pada berkas nilai harus cocok dengan lulusan yang sudah tersimpan. Isi **total SKS dan IPK resmi** dari sumber akademik pada profil lulusan; aplikasi membandingkannya dengan perhitungan nilai dan bobot.
-4. Buka pratinjau PDF, cocokkan dengan data resmi dan blanko fisik, lalu terbitkan. Penerbitan menyimpan snapshot data, versi template, PDF final, dan hash PDF.
-5. PDF dapat dibuka/cetak ulang. Jika salah, batalkan dengan alasan lalu terbitkan pengganti. QR lama tetap menunjukkan status dibatalkan.
+3. Atur **Kurikulum** setiap prodi sekali saja: daftar mata kuliah (kode, nama, SKS) dengan urutan yang sama seperti di transkrip, serta **skala nilai** (huruf → bobot, awalnya A=4, B=3, C=2, D=1, E=0).
+4. Buka menu **Nilai**, pilih mahasiswa, lalu isi **nilai huruf** untuk setiap mata kuliah kurikulum, atau unduh template nilai mahasiswa tersebut, isi kolom `nilai_huruf`, dan muat kembali. Bobot dan mutu dihitung dari skala; SKS dan IPK hasil hitung langsung dibandingkan dengan **total SKS dan IPK resmi** pada profil lulusan.
+5. Buka pratinjau PDF, cocokkan dengan data resmi dan blanko fisik, lalu terbitkan. Penerbitan menyimpan snapshot data, versi template, PDF final, dan hash PDF.
+6. PDF dapat dibuka/cetak ulang. Jika salah, batalkan dengan alasan lalu terbitkan pengganti. QR lama tetap menunjukkan status dibatalkan.
 
 Selama ada dokumen aktif (ijazah atau transkrip), identitas lulusan terkunci. Selama transkrip aktif, daftar nilai terkunci. Untuk memperbaiki data, batalkan dokumen terkait lebih dahulu.
+
+### Kurikulum dan nilai per mahasiswa
+
+- Kurikulum disimpan per prodi. Urutan baris menjadi urutan mata kuliah pada transkrip; ubah urutan dengan tombol ↑ ↓. Daftar dapat dimuat dari Excel (`kode_mk, nama_mk, sks`) melalui template kurikulum; hasilnya tampil di tabel dan baru tersimpan setelah **Simpan kurikulum**.
+- Nilai mahasiswa hanya berisi nilai huruf. Mata kuliah yang dikosongkan dianggap tidak diambil dan tidak ikut transkrip. Kode, nama, dan SKS selalu diambil dari kurikulum saat nilai disimpan.
+- Template nilai per mahasiswa berisi NIM dan seluruh mata kuliah kurikulum. Saat dimuat, berkas dengan NIM lain, kode di luar kurikulum, atau huruf di luar skala ditolak. Hasil impor tampil di tabel lebih dahulu dan baru tersimpan setelah **Simpan nilai**.
+- Mengubah kurikulum atau skala tidak mengubah transkrip yang sudah terbit. Nilai mahasiswa memakai kurikulum dan skala terbaru saat nilainya disimpan ulang. Nilai lama yang kodenya tidak lagi ada di kurikulum tampil sebagai **Nilai di luar kurikulum** dan tetap ikut transkrip sampai dihapus.
 
 ### Latar blanko di editor
 
@@ -47,7 +55,7 @@ Template awal **belum mencetak QR** karena posisi kosong pada blanko fisik belum
 
 ## Template Excel (.xls) dan impor data
 
-Menu **Impor lulusan** menyediakan template lulusan. Setelah ada data lulusan, menu **Nilai → Impor nilai** menyediakan template nilai. Keduanya merupakan berkas `.xls` asli. Sheet `Data` masih kosong; isi mulai baris 2 tanpa mengubah header. Sheet `Petunjuk` menjelaskan pengisian. NIM, kode mata kuliah, nomor dokumen, dan tanggal sudah disiapkan sebagai teks agar angka nol di depan tetap utuh. Berkas `.xlsx` dan CSV lama juga dapat diimpor.
+Menu **Impor lulusan** menyediakan template lulusan, menu **Kurikulum** menyediakan template kurikulum per prodi, dan halaman nilai setiap mahasiswa menyediakan template nilai mahasiswa tersebut. Semuanya berkas `.xls` asli. Isi sheet `Data` mulai baris 2 tanpa mengubah header. Sheet `Petunjuk` menjelaskan pengisian. NIM, kode mata kuliah, nomor dokumen, dan tanggal sudah disiapkan sebagai teks agar angka nol di depan tetap utuh. Berkas `.xlsx` dan CSV lama juga dapat diimpor.
 
 Data lulusan wajib memiliki kolom:
 
@@ -57,13 +65,9 @@ nim,nama_lengkap,tempat_lahir,tanggal_lahir,kode_prodi,tanggal_lulus,nomor_ijaza
 
 Kolom opsional: `program_pendidikan`, `judul_skripsi`. Tanggal memakai `YYYY-MM-DD`; angka desimal memakai titik. `kode_prodi` saat ini `AKUNTANSI` atau `MANAJEMEN`.
 
-Data nilai wajib memiliki kolom:
+Template nilai mahasiswa memakai kolom `nim, urutan, kode_mk, nama_mk, sks, nilai_huruf`; saat dimuat hanya `kode_mk` dan `nilai_huruf` yang wajib, dan `nim` (jika ada) harus sama dengan mahasiswa yang dibuka.
 
-```text
-nim,urutan,kode_mk,nama_mk,sks,nilai_huruf,bobot_nilai
-```
-
-Kolom opsional: `kelompok_mk`. Satu baris per mata kuliah per lulusan. Maksimal 5 MB dan 10.000 baris per berkas. Impor mempratinjau kesalahan dan baru menyimpan setelah Admin menekan **Simpan hasil impor**. Seluruh batch ditolak jika ada kesalahan; lulusan dengan dokumen aktif tidak ditimpa, dan nilai lulusan dengan transkrip aktif tidak diganti. Impor ulang lulusan tidak menghapus nilai, sedangkan impor ulang nilai mengganti seluruh daftar nilai untuk NIM dalam berkas.
+Impor lulusan maksimal 5 MB dan 10.000 baris per berkas. Impor mempratinjau kesalahan dan baru menyimpan setelah Admin menekan **Simpan hasil impor**. Seluruh batch ditolak jika ada kesalahan; lulusan dengan dokumen aktif tidak ditimpa. Impor ulang lulusan tidak menghapus nilai.
 
 ## Batas saat ini
 

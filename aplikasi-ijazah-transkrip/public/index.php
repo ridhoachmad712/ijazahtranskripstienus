@@ -59,7 +59,7 @@ try {
                 flash('warning', 'Masukkan data lulusan lebih dahulu sebelum mengelola nilai.');
                 redirect_to('import');
             }
-            grades_page(trim((string) ($_GET['q'] ?? '')));
+            grades_page(trim((string) ($_GET['q'] ?? '')), (string) ($_GET['status'] ?? ''));
             break;
         case 'graduate-form':
             $id = (int) ($_GET['id'] ?? 0);
@@ -78,78 +78,114 @@ try {
             if (!$graduate) throw new DomainException('Lulusan tidak ditemukan.');
             graduate_detail_page($graduate);
             break;
-        case 'grade-save':
-            if ($method !== 'POST') break;
-            $id = (int) ($_POST['graduate_id'] ?? 0);
-            save_grade($id, $_POST);
-            flash('success', 'Nilai mata kuliah tersimpan.');
-            redirect_to('graduate', ['id'=>$id, 'nilai'=>1]);
         case 'grade-delete':
             if ($method !== 'POST') break;
             $id = (int) ($_POST['graduate_id'] ?? 0);
             delete_grade($id, (int) ($_POST['grade_id'] ?? 0));
             flash('success', 'Nilai mata kuliah dihapus.');
-            redirect_to('graduate', ['id'=>$id, 'nilai'=>1]);
+            redirect_to('grade-sheet', ['id'=>$id]);
+        case 'grade-sheet':
+            $graduate = find_graduate((int) ($_GET['id'] ?? 0));
+            if (!$graduate) throw new DomainException('Lulusan tidak ditemukan.');
+            grade_sheet_page($graduate);
+            break;
+        case 'grade-sheet-save':
+            if ($method !== 'POST') break;
+            $id = (int) ($_POST['graduate_id'] ?? 0);
+            $codes = array_values((array) ($_POST['code'] ?? []));
+            $letterValues = array_values((array) ($_POST['letter'] ?? []));
+            $letters = [];
+            foreach ($codes as $index => $code) $letters[(string) $code] = (string) ($letterValues[$index] ?? '');
+            $count = save_grade_sheet($id, $letters);
+            unset($_SESSION['grade_draft'][$id]);
+            flash('success', $count . ' nilai mata kuliah tersimpan.');
+            redirect_to('grade-sheet', ['id'=>$id]);
+        case 'grade-sheet-import':
+            if ($method !== 'POST') break;
+            $graduate = find_graduate((int) ($_POST['graduate_id'] ?? 0));
+            if (!$graduate) throw new DomainException('Lulusan tidak ditemukan.');
+            assert_grades_editable((int) $graduate['id']);
+            $letters = grade_letters_from_upload($graduate, $_FILES['import_file'] ?? []);
+            $_SESSION['grade_draft'][(int) $graduate['id']] = ['letters'=>$letters, 'file'=>(string) ($_FILES['import_file']['name'] ?? '')];
+            redirect_to('grade-sheet', ['id'=>$graduate['id']]);
+        case 'grade-sheet-discard':
+            if ($method !== 'POST') break;
+            $id = (int) ($_POST['graduate_id'] ?? 0);
+            unset($_SESSION['grade_draft'][$id]);
+            flash('success', 'Hasil impor dibuang. Nilai tersimpan tidak berubah.');
+            redirect_to('grade-sheet', ['id'=>$id]);
+        case 'grade-sheet-template':
+            $graduate = find_graduate((int) ($_GET['id'] ?? 0));
+            if (!$graduate) throw new DomainException('Lulusan tidak ditemukan.');
+            if (!curriculum_for($graduate['program_code'])) throw new DomainException('Kurikulum prodi ini belum diatur.');
+            send_xls('nilai-' . preg_replace('/[^A-Za-z0-9_-]/', '', $graduate['nim']) . '.xls', static fn($path) => write_grade_sheet_template($graduate, $path));
+            break;
+        case 'curriculum':
+            $program = (string) ($_GET['program'] ?? array_key_first(programs()));
+            if (!array_key_exists($program, programs())) throw new DomainException('Program studi tidak dikenal.');
+            curriculum_page($program);
+            break;
+        case 'curriculum-save':
+            if ($method !== 'POST') break;
+            $program = (string) ($_POST['program'] ?? '');
+            try {
+                $rows = curriculum_rows_from_form($_POST);
+            } catch (DomainException $e) {
+                // Simpan isian sementara agar tabel yang panjang tidak perlu diketik ulang.
+                $_SESSION['curriculum_draft'][$program] = ['rows'=>raw_curriculum_rows($_POST), 'file'=>''];
+                throw $e;
+            }
+            save_curriculum($program, $rows);
+            unset($_SESSION['curriculum_draft'][$program]);
+            flash('success', 'Kurikulum tersimpan: ' . count($rows) . ' mata kuliah.');
+            redirect_to('curriculum', ['program'=>$program]);
+        case 'curriculum-import':
+            if ($method !== 'POST') break;
+            $program = (string) ($_POST['program'] ?? '');
+            if (!array_key_exists($program, programs())) throw new DomainException('Program studi tidak dikenal.');
+            $_SESSION['curriculum_draft'][$program] = ['rows'=>curriculum_rows_from_upload($_FILES['import_file'] ?? []), 'file'=>(string) ($_FILES['import_file']['name'] ?? '')];
+            redirect_to('curriculum', ['program'=>$program]);
+        case 'curriculum-discard':
+            if ($method !== 'POST') break;
+            $program = (string) ($_POST['program'] ?? '');
+            unset($_SESSION['curriculum_draft'][$program]);
+            flash('success', 'Hasil impor dibuang. Kurikulum tersimpan tidak berubah.');
+            redirect_to('curriculum', ['program'=>$program]);
+        case 'curriculum-template':
+            $program = (string) ($_GET['program'] ?? '');
+            if (!array_key_exists($program, programs())) throw new DomainException('Program studi tidak dikenal.');
+            send_xls('kurikulum-' . strtolower($program) . '.xls', static fn($path) => write_curriculum_template($program, $path));
+            break;
+        case 'grade-scale-save':
+            if ($method !== 'POST') break;
+            save_grade_scale((array) ($_POST['scale_letter'] ?? []), (array) ($_POST['scale_weight'] ?? []));
+            flash('success', 'Skala nilai tersimpan. Bobot nilai mahasiswa diperbarui saat nilainya disimpan ulang.');
+            redirect_to('curriculum', ['program'=>(string) ($_POST['program'] ?? '')]);
         case 'import':
             import_page('graduates');
             break;
-        case 'import-grades':
-            if ((int) db()->query('SELECT COUNT(*) FROM graduates')->fetchColumn() === 0) {
-                flash('warning', 'Masukkan data lulusan lebih dahulu sebelum mengimpor nilai.');
-                redirect_to('import');
-            }
-            import_page('grades');
-            break;
         case 'import-preview':
             if ($method !== 'POST') break;
-            $kind = (string) ($_POST['kind'] ?? '');
-            if ($kind === 'grades' && (int) db()->query('SELECT COUNT(*) FROM graduates')->fetchColumn() === 0) {
-                flash('warning', 'Masukkan data lulusan lebih dahulu sebelum mengimpor nilai.');
-                redirect_to('import');
-            }
-            $preview = make_import_preview($_FILES['import_file'] ?? [], $kind);
+            $preview = make_import_preview($_FILES['import_file'] ?? [], (string) ($_POST['kind'] ?? ''));
             save_import_preview($preview);
             flash($preview['errors'] ? 'warning' : 'success', $preview['errors'] ? 'Berkas perlu diperbaiki sebelum disimpan.' : 'Data siap diperiksa dan disimpan.');
-            redirect_to($kind === 'grades' ? 'import-grades' : 'import');
+            redirect_to('import');
         case 'import-commit':
             if ($method !== 'POST') break;
-            $kind = (string) ($_POST['kind'] ?? '');
-            if ($kind === 'grades' && (int) db()->query('SELECT COUNT(*) FROM graduates')->fetchColumn() === 0) {
-                flash('warning', 'Masukkan data lulusan lebih dahulu sebelum mengimpor nilai.');
-                redirect_to('import');
-            }
-            $result = commit_import($kind);
-            flash('success', $kind === 'grades' ? $result['grade_count'] . ' nilai berhasil diimpor.' : $result['graduate_count'] . ' lulusan berhasil diimpor. Sekarang Anda dapat menginput atau mengimpor nilai.');
-            redirect_to($kind === 'grades' ? 'grades' : 'graduates');
+            $result = commit_import((string) ($_POST['kind'] ?? ''));
+            flash('success', $result['graduate_count'] . ' lulusan berhasil diimpor. Nilai diisi per mahasiswa melalui menu Nilai.');
+            redirect_to('graduates');
         case 'xls-sample':
             if ($method !== 'GET') break;
             $kind = (string) ($_GET['kind'] ?? '');
             import_headers($kind);
-            $filename = $kind === 'graduates' ? 'template-lulusan.xls' : 'template-nilai.xls';
-            $temporary = tempnam(sys_get_temp_dir(), 'stie-xls-');
-            if ($temporary === false) throw new RuntimeException('Template Excel gagal disiapkan.');
-            try {
-                write_xls_template($kind, $temporary);
-                header('Content-Type: application/vnd.ms-excel');
-                header('Content-Disposition: attachment; filename="' . $filename . '"');
-                header('Content-Length: ' . filesize($temporary));
-                readfile($temporary);
-            } finally {
-                unlink($temporary);
-            }
+            send_xls('template-lulusan.xls', static fn($path) => write_xls_template($kind, $path));
             break;
         case 'csv-sample':
-            $kind = (string) ($_GET['kind'] ?? '');
-            if ($kind === 'graduates') {
-                $filename = 'contoh-lulusan.csv';
-                $csv = "nim,nama_lengkap,tempat_lahir,tanggal_lahir,kode_prodi,program_pendidikan,tanggal_lulus,nomor_ijazah_nasional,nomor_transkrip,tanggal_terbit,judul_skripsi,total_sks_resmi,ipk_resmi\r\n0012345678,Contoh Lulusan,Sungguminasa,2002-04-18,AKUNTANSI,S1,2026-08-15,CONTOH-001,CONTOH-TR-001,2026-09-01,Contoh judul skripsi,6,3.50\r\n";
-            } elseif ($kind === 'grades') {
-                $filename = 'contoh-nilai.csv';
-                $csv = "nim,urutan,kode_mk,nama_mk,kelompok_mk,sks,nilai_huruf,bobot_nilai\r\n0012345678,1,AKT001,Pengantar Akuntansi,Inti,3,A,4.00\r\n0012345678,2,AKT002,Akuntansi Keuangan,Inti,3,B,3.00\r\n";
-            } else throw new DomainException('Contoh CSV tidak ditemukan.');
+            if (($_GET['kind'] ?? '') !== 'graduates') throw new DomainException('Contoh CSV tidak ditemukan.');
             header('Content-Type: text/csv; charset=utf-8');
-            header('Content-Disposition: attachment; filename="' . $filename . '"');
-            echo $csv;
+            header('Content-Disposition: attachment; filename="contoh-lulusan.csv"');
+            echo "nim,nama_lengkap,tempat_lahir,tanggal_lahir,kode_prodi,program_pendidikan,tanggal_lulus,nomor_ijazah_nasional,nomor_transkrip,tanggal_terbit,judul_skripsi,total_sks_resmi,ipk_resmi\r\n0012345678,Contoh Lulusan,Sungguminasa,2002-04-18,AKUNTANSI,S1,2026-08-15,CONTOH-001,CONTOH-TR-001,2026-09-01,Contoh judul skripsi,6,3.50\r\n";
             break;
         case 'templates':
             templates_page();
@@ -284,15 +320,20 @@ try {
     $back = match ($route) {
         'login' => 'login',
         'graduate-save' => 'graduate-form',
-        'grade-save','grade-delete','issue','revoke' => 'graduate',
-        'import-preview','import-commit' => ($_POST['kind'] ?? '') === 'grades' ? 'import-grades' : 'import',
+        'issue','revoke' => 'graduate',
+        'grade-delete','grade-sheet-save','grade-sheet-import','grade-sheet-discard' => 'grade-sheet',
+        'grade-sheet-template' => 'grades',
+        'curriculum-save','curriculum-import','curriculum-discard','curriculum-template','grade-scale-save' => 'curriculum',
+        'import-preview','import-commit' => 'import',
         'xls-sample','csv-sample' => 'import',
         'template-save','template-background-upload','template-background-delete' => 'template-edit',
         default => 'dashboard',
     };
     $query = match ($back) {
         'graduate-form' => ['id'=>(int) ($_POST['id'] ?? 0)],
-        'graduate' => ['id'=>(int) ($_POST['graduate_id'] ?? $doc['graduate_id'] ?? 0)] + (in_array($route, ['grade-save','grade-delete'], true) ? ['nilai'=>1] : []),
+        'graduate' => ['id'=>(int) ($_POST['graduate_id'] ?? $doc['graduate_id'] ?? 0)],
+        'grade-sheet' => ['id'=>(int) ($_POST['graduate_id'] ?? 0)],
+        'curriculum' => ['program'=>(string) ($_POST['program'] ?? $_GET['program'] ?? '')],
         'template-edit' => ['kind'=>(string) ($_POST['kind'] ?? ''),'program'=>(string) ($_POST['program'] ?? '')],
         default => [],
     };
