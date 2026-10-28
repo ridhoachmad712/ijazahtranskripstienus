@@ -23,7 +23,7 @@ function page_header(string $title, string $active = '', bool $public = false): 
     $items['curriculum'] = ['Kurikulum','book'];
     if ($admin && (int) db()->query('SELECT COUNT(*) FROM graduates')->fetchColumn() > 0) $items['grades'] = ['Nilai','document'];
     $items['templates'] = ['Template','template'];
-    echo '<!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' . h($title) . ' — STIE Nusantara</title><link rel="stylesheet" href="assets/bootstrap/bootstrap.min.css"><link rel="stylesheet" href="assets/app.css?v=14"></head><body' . ($admin ? ' class="has-admin"' : ' class="public-page"') . '>';
+    echo '<!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' . h($title) . ' — STIE Nusantara</title><link rel="stylesheet" href="assets/bootstrap/bootstrap.min.css"><link rel="stylesheet" href="assets/app.css?v=15"></head><body' . ($admin ? ' class="has-admin"' : ' class="public-page"') . '>';
     if ($admin) {
         echo '<header class="app-header"><div class="app-header-inner"><a class="app-brand" href="' . h(route_url('dashboard')) . '"><span class="brand-mark">SN</span><span class="brand-copy"><strong>STIE Nusantara</strong><span>Ijazah &amp; Transkrip</span></span></a><button class="navbar-toggler app-menu-toggle d-lg-none" type="button" data-bs-toggle="collapse" data-bs-target="#main-navigation" aria-controls="main-navigation" aria-expanded="false" aria-label="Buka menu"><span aria-hidden="true">☰</span></button><nav class="collapse navbar-collapse app-navigation" id="main-navigation" aria-label="Menu utama"><div class="navbar-nav app-nav-links">';
         foreach ($items as $route => [$label, $icon]) echo '<a class="nav-link ' . ($active === $route ? 'active' : '') . '"' . ($active === $route ? ' aria-current="page"' : '') . ' href="' . h(route_url($route)) . '">' . ui_icon($icon) . '<span>' . h($label) . '</span></a>';
@@ -189,7 +189,7 @@ function graduate_detail_page(array $graduate): void
     echo '<div class="card mb-3" id="nilai"><div class="card-body d-flex flex-wrap align-items-center justify-content-between gap-3"><div><h2 class="h6 mb-1">Mata kuliah dan nilai</h2><div class="small text-secondary">' . count($grades) . ' mata kuliah · ' . h(format_number($summary['credits'])) . ' SKS · IPK hitung ' . ($summary['gpa'] !== null ? h(number_format($summary['gpa'], 2, ',', '.')) : '—') . ($match === null ? ' · SKS/IPK resmi belum diisi' : ($match ? ' · <span class="text-success">cocok dengan data resmi</span>' : ' · <span class="text-danger">belum cocok dengan data resmi</span>')) . '</div></div><a class="btn btn-outline-secondary" href="' . h(route_url('grade-sheet', ['id'=>$id])) . '">' . ($gradesLocked ? 'Lihat nilai' : 'Isi nilai') . '</a></div></div>';
     echo '<div class="card"><div class="card-body"><h2 class="h6 mb-3">Riwayat dokumen</h2><div class="table-responsive"><table class="table table-sm align-middle mb-0"><thead><tr><th>Jenis</th><th>Nomor</th><th>Status</th><th>Terbit</th><th>Tindakan</th></tr></thead><tbody>';
     foreach ($docs as $doc) {
-        echo '<tr><td>' . ($doc['kind']==='diploma'?'Ijazah':'Transkrip') . '</td><td>' . h($doc['document_number']) . '</td><td>' . status_badge($doc['status']) . '</td><td>' . h($doc['issued_at']) . '</td><td><div class="d-flex flex-wrap gap-2"><a class="btn btn-sm btn-outline-secondary" href="' . h(route_url('download',['id'=>$doc['id']])) . '">PDF</a>';
+        echo '<tr><td>' . ($doc['kind']==='diploma'?'Ijazah':'Transkrip') . '</td><td>' . h($doc['document_number']) . '</td><td>' . status_badge($doc['status']) . '</td><td>' . h($doc['issued_at']) . ($doc['kind'] === 'diploma' && $doc['qr_token'] ? '<div class="small text-secondary">' . ((int) $doc['verify_count'] ? 'QR dipindai ' . (int) $doc['verify_count'] . '× · terakhir ' . h($doc['last_verified_at']) : 'QR belum pernah dipindai') . '</div>' : '') . '</td><td><div class="d-flex flex-wrap gap-2"><a class="btn btn-sm btn-outline-secondary" href="' . h(route_url('download',['id'=>$doc['id']])) . '">PDF</a>';
         if ($doc['kind']==='diploma' && $doc['qr_token']) echo '<a class="btn btn-sm btn-outline-secondary" target="_blank" href="' . h(route_url('verify',['t'=>$doc['qr_token']])) . '">Verifikasi</a>';
         if ($doc['status']==='issued') echo '<form class="d-flex gap-1" method="post" action="' . h(route_url('revoke')) . '">' . csrf_field() . '<input type="hidden" name="id" value="' . (int) $doc['id'] . '"><input class="form-control form-control-sm" name="reason" aria-label="Alasan pembatalan" placeholder="Alasan pembatalan" required><button class="btn btn-sm btn-outline-danger" type="submit" onclick="return confirm(\'Batalkan dokumen terbit ini?\')">Batalkan</button></form>';
         echo '</div></td></tr>';
@@ -425,17 +425,42 @@ function verify_page(?array $document): void
     header('Cache-Control: no-store, no-cache, must-revalidate, private');
     header('X-Robots-Tag: noindex, nofollow');
     page_header('Verifikasi ijazah', '', true);
-    echo '<div class="row justify-content-center"><div class="col-lg-7"><div class="small text-secondary mb-2">STIE NUSANTARA MAKASSAR</div><h1 class="h4 mb-4">Verifikasi ijazah</h1>';
+    echo '<div class="verify-shell"><div class="verify-brand"><span class="brand-mark">SN</span><div><strong>STIE Nusantara Makassar</strong><span>Layanan verifikasi ijazah</span></div></div>';
     if (!$document) {
-        echo '<div class="alert alert-secondary">Data verifikasi tidak tersedia. Periksa kembali QR pada ijazah atau hubungi kampus.</div>';
+        echo '<section class="verify-card"><div class="verify-status verify-status-unknown"><span class="verify-icon" aria-hidden="true">?</span><div><h1>Data tidak ditemukan</h1><p>Kode QR ini tidak terdaftar sebagai ijazah STIE Nusantara Makassar.</p></div></div><div class="verify-body"><p class="mb-0">Pastikan QR dipindai langsung dari ijazah asli. Jika data tetap tidak ditemukan, konfirmasikan keaslian dokumen kepada kampus.</p></div></section>';
     } else {
         $snapshot = json_decode($document['snapshot_json'], true, 512, JSON_THROW_ON_ERROR);
         $graduate = $snapshot['graduate'];
         $active = $document['status'] === 'issued';
-        echo '<div class="card"><div class="card-body p-4"><div class="mb-3">' . ($active ? '<span class="badge text-bg-success">Tercatat terbit</span>' : '<span class="badge text-bg-danger">Dibatalkan</span>') . '</div><h2 class="h5 mb-3">' . h($graduate['name']) . '</h2><dl class="row mb-0"><dt class="col-sm-4">Program studi</dt><dd class="col-sm-8">' . h(programs()[$graduate['program_code']]['label'] ?? $graduate['program_code']) . '</dd><dt class="col-sm-4">Nomor ijazah</dt><dd class="col-sm-8">' . h($document['document_number']) . '</dd><dt class="col-sm-4">Tanggal terbit</dt><dd class="col-sm-8">' . h(format_date_id($graduate['issue_date'])) . '</dd></dl>';
-        if (!$active) echo '<div class="alert alert-danger mb-0">Catatan penerbitan ini telah dibatalkan. Hubungi STIE Nusantara Makassar untuk informasi dokumen pengganti.</div>';
-        echo '</div></div>';
+        $program = programs()[$graduate['program_code']] ?? null;
+        $degree = trim((string) ($snapshot['template']['settings']['texts']['degree'] ?? ($program['degree'] ?? '')));
+        echo '<section class="verify-card">';
+        if ($active) {
+            echo '<div class="verify-status verify-status-valid"><span class="verify-icon" aria-hidden="true">✓</span><div><h1>Ijazah tercatat sah</h1><p>Ijazah ini tercatat diterbitkan oleh STIE Nusantara Makassar.</p></div></div>';
+        } else {
+            $replacement = replacement_document((int) $document['id']);
+            echo '<div class="verify-status verify-status-revoked"><span class="verify-icon" aria-hidden="true">✕</span><div><h1>Ijazah ini telah dibatalkan</h1><p>Dibatalkan pada ' . h(format_date_id(substr((string) $document['revoked_at'], 0, 10))) . ' dan tidak berlaku lagi.' . ($replacement ? ' Telah diganti dengan ijazah nomor <strong>' . h($replacement['document_number']) . '</strong>.' : '') . '</p></div></div>';
+        }
+        $rows = [
+            'Nama lulusan' => $graduate['name'],
+            'NIM' => mask_nim((string) $graduate['nim']),
+            'Program studi' => $program['label'] ?? $graduate['program_code'],
+            'Gelar' => $degree,
+            'Tanggal lulus' => format_date_id((string) ($graduate['graduation_date'] ?? '')),
+            'Nomor ijazah nasional' => $document['document_number'],
+            'Tanggal terbit' => format_date_id((string) $graduate['issue_date']),
+        ];
+        echo '<dl class="verify-body verify-details">';
+        foreach ($rows as $label => $value) {
+            if (trim((string) $value) === '') continue;
+            echo '<div><dt>' . h($label) . '</dt><dd' . ($label === 'Nama lulusan' ? ' class="verify-name"' : '') . '>' . h($value) . '</dd></div>';
+        }
+        echo '</dl></section>';
+        echo '<section class="verify-guide"><h2>Cara memeriksa</h2><p>Cocokkan nama, nomor ijazah, dan tanggal di atas dengan ijazah fisik. NIM sengaja disamarkan sebagian. Jika ada perbedaan, konfirmasikan kepada kampus sebelum menerima dokumen. Nomor ijazah nasional juga dapat diperiksa melalui <a href="https://pisn.kemdiktisaintek.go.id/" rel="noopener" target="_blank">PISN</a>.</p></section>';
     }
-    echo '<p class="small text-secondary mt-4">Cocokkan rincian ini dengan ijazah fisik. QR menunjukkan catatan penerbitan kampus; nomor nasional dapat diperiksa melalui <a href="https://pisn.kemdiktisaintek.go.id/" rel="noopener" target="_blank">PISN</a>.</p></div></div>';
+    $contact = trim((string) (app_config()['verify_contact'] ?? ''));
+    if ($contact !== '') echo '<section class="verify-guide"><h2>Kontak kampus</h2><p>' . h($contact) . '</p></section>';
+    $zone = (string) app_config()['timezone'] === 'Asia/Makassar' ? ' WITA' : '';
+    echo '<p class="verify-footer">Diperiksa pada ' . h(format_date_id(date('Y-m-d')) . ' pukul ' . date('H.i') . $zone) . '</p></div>';
     page_footer(true);
 }

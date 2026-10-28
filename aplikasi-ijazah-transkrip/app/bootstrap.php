@@ -12,6 +12,7 @@ function app_config(): array
             'db_path' => APP_ROOT . '/storage/app.sqlite',
             'storage_root' => APP_ROOT . '/storage',
             'timezone' => 'Asia/Makassar',
+            'verify_contact' => '',
         ];
         $local = APP_ROOT . '/config.local.php';
         if (is_file($local)) {
@@ -156,6 +157,9 @@ CREATE TABLE IF NOT EXISTS audit_events (
  created_at TEXT NOT NULL
 );
 SQL);
+    $documentColumns = array_column($db->query('PRAGMA table_info(documents)')->fetchAll(), 'name');
+    if (!in_array('verify_count', $documentColumns, true)) $db->exec('ALTER TABLE documents ADD COLUMN verify_count INTEGER NOT NULL DEFAULT 0');
+    if (!in_array('last_verified_at', $documentColumns, true)) $db->exec('ALTER TABLE documents ADD COLUMN last_verified_at TEXT');
     // Versi lama menyimpan SKS/IPK resmi yang kosong sebagai teks ''.
     $db->exec("UPDATE graduates SET official_credits=NULL WHERE official_credits=''");
     $db->exec("UPDATE graduates SET official_gpa=NULL WHERE official_gpa=''");

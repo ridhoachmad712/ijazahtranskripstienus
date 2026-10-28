@@ -214,6 +214,23 @@ try {
     $snapshot = json_decode(find_document($diplomaId)['snapshot_json'], true);
     expect(find_graduate($id)['name'] === 'Nama Setelah Terbit' && $snapshot['graduate']['name'] === 'Contoh Lulusan', 'Snapshot terbit berubah.');
     expect(find_document_by_token($diploma['qr_token'])['status'] === 'revoked', 'Token lama tidak menampilkan status batal.');
+
+    // Halaman verifikasi QR: status, NIM tersamar, dokumen pengganti, dan hitungan pindai.
+    $replacementDiploma = find_document(issue_document($id, 'diploma'));
+    $verifyHtml = static function (?array $document): string {
+        ob_start();
+        verify_page($document);
+        return (string) ob_get_clean();
+    };
+    $oldPage = $verifyHtml(find_document($diplomaId));
+    expect(str_contains($oldPage, 'telah dibatalkan') && str_contains($oldPage, 'Telah diganti dengan ijazah nomor <strong>CONTOH-NOMOR-001</strong>'), 'Halaman QR lama tidak menunjukkan pembatalan dan pengganti.');
+    $newPage = $verifyHtml($replacementDiploma);
+    expect(str_contains($newPage, 'Ijazah tercatat sah') && str_contains($newPage, '0012••••78') && !str_contains($newPage, '0012345678') && str_contains($newPage, 'SARJANA AKUNTANSI') && str_contains($newPage, '15 Agustus 2026'), 'Halaman QR aktif tidak lengkap atau NIM tidak disamarkan.');
+    expect(str_contains($verifyHtml(null), 'Data tidak ditemukan'), 'Halaman QR untuk kode tidak dikenal salah.');
+    record_verification((int) $replacementDiploma['id']);
+    record_verification((int) $replacementDiploma['id']);
+    expect((int) find_document((int) $replacementDiploma['id'])['verify_count'] === 2, 'Pemindaian QR belum tercatat.');
+    revoke_document((int) $replacementDiploma['id'], 'Uji pembersihan');
     $longId = save_graduate([
         'nim'=>'0099999999','name'=>'Lulusan Dengan Banyak Mata Kuliah','birth_place'=>'Makassar','birth_date'=>'2002-01-01',
         'program_code'=>'AKUNTANSI','education_program'=>'S1','graduation_date'=>'2026-08-15',

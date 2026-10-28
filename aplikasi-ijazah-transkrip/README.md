@@ -51,7 +51,7 @@ Pada editor ijazah, tombol **Unggah latar blanko** menerima pindaian/foto blanko
 
 ### QR pada blanko
 
-Template awal **belum mencetak QR** karena posisi kosong pada blanko fisik belum disahkan. Editor selalu menampilkan kotak panduan QR yang dapat digeser; X, Y, dan ukuran disimpan bersama versi template meskipun opsi cetak QR belum dicentang. PDF pratinjau juga menampilkan kotak **PANDUAN QR** untuk kalibrasi, sedangkan PDF final hanya mencetak QR jika opsi cetak diaktifkan. Halaman verifikasi tetap tersedia untuk dokumen yang diterbitkan. Token QR adalah verifikasi catatan kampus, bukan pengganti [PISN](https://pisn.kemdiktisaintek.go.id/).
+Template awal **belum mencetak QR** karena posisi kosong pada blanko fisik belum disahkan. Editor selalu menampilkan kotak panduan QR yang dapat digeser; X, Y, dan ukuran disimpan bersama versi template meskipun opsi cetak QR belum dicentang. PDF pratinjau juga menampilkan kotak **PANDUAN QR** untuk kalibrasi, sedangkan PDF final hanya mencetak QR jika opsi cetak diaktifkan. Halaman verifikasi tetap tersedia untuk dokumen yang diterbitkan: menampilkan status (sah, dibatalkan beserta nomor ijazah pengganti, atau tidak ditemukan), nama, NIM yang disamarkan sebagian, prodi, gelar, tanggal lulus, nomor ijazah, dan tanggal terbit. Isi `verify_contact` di `config.local.php` untuk menampilkan kontak resmi kampus. Jumlah dan waktu pemindaian terakhir tampil di riwayat dokumen; kunjungan Admin yang sedang masuk tidak dihitung. Token QR adalah verifikasi catatan kampus, bukan pengganti [PISN](https://pisn.kemdiktisaintek.go.id/).
 
 ## Template Excel (.xls) dan impor data
 

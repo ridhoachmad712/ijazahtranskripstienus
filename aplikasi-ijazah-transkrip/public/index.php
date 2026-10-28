@@ -17,6 +17,7 @@ try {
     if ($route === 'verify' && $method === 'GET') {
         $token = (string) ($_GET['t'] ?? '');
         $document = preg_match('/^[a-f0-9]{48}$/', $token) ? find_document_by_token($token) : null;
+        if ($document && empty($_SESSION['admin_id'])) record_verification((int) $document['id']);
         verify_page($document);
         exit;
     }

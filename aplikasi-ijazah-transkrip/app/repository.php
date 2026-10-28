@@ -578,6 +578,27 @@ function find_document_by_token(string $token): ?array
     return $stmt->fetch() ?: null;
 }
 
+// Pemindaian oleh pengunjung umum; Admin yang sedang masuk tidak dihitung.
+function record_verification(int $documentId): void
+{
+    db()->prepare('UPDATE documents SET verify_count=verify_count+1,last_verified_at=? WHERE id=?')->execute([now_local(), $documentId]);
+}
+
+function replacement_document(int $documentId): ?array
+{
+    $stmt = db()->prepare('SELECT * FROM documents WHERE replaces_id=? AND status=\'issued\' ORDER BY id DESC LIMIT 1');
+    $stmt->execute([$documentId]);
+    return $stmt->fetch() ?: null;
+}
+
+function mask_nim(string $nim): string
+{
+    $length = mb_strlen($nim);
+    $start = $length >= 8 ? 4 : intdiv($length, 3);
+    $end = $length >= 8 ? 2 : ($length > 3 ? 1 : 0);
+    return mb_substr($nim, 0, $start) . str_repeat('•', max(0, $length - $start - $end)) . ($end ? mb_substr($nim, -$end) : '');
+}
+
 function issue_document(int $graduateId, string $kind): int
 {
     if (!in_array($kind, ['diploma','transcript'], true)) throw new DomainException('Jenis dokumen tidak valid.');
