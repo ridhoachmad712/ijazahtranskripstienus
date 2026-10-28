@@ -168,6 +168,35 @@ try {
             save_template_version($kind,$program,$_POST);
             flash('success', 'Versi template baru aktif.');
             redirect_to('template-edit', ['kind'=>$kind,'program'=>$program]);
+        case 'template-background':
+            $path = template_background_path((string) ($_GET['program'] ?? ''));
+            if ($path === null) {
+                http_response_code(404);
+                break;
+            }
+            $mime = array_search(pathinfo($path, PATHINFO_EXTENSION), TEMPLATE_BACKGROUND_TYPES, true);
+            header('Content-Type: ' . $mime);
+            header('Content-Length: ' . filesize($path));
+            header('Cache-Control: private, no-cache');
+            readfile($path);
+            break;
+        case 'template-background-upload':
+            if ($method !== 'POST') break;
+            $program = (string) ($_POST['program'] ?? '');
+            $file = $_FILES['background'] ?? [];
+            $error = (int) ($file['error'] ?? UPLOAD_ERR_NO_FILE);
+            if (in_array($error, [UPLOAD_ERR_INI_SIZE, UPLOAD_ERR_FORM_SIZE], true)) throw new DomainException('Ukuran gambar latar maksimal 10 MB.');
+            if ($error !== UPLOAD_ERR_OK || !is_uploaded_file((string) ($file['tmp_name'] ?? ''))) throw new DomainException('Pilih gambar blanko yang akan diunggah.');
+            $warning = save_template_background($program, (string) $file['tmp_name']);
+            flash('success', 'Latar blanko tersimpan. Latar hanya tampil di editor dan tidak ikut dicetak.');
+            if ($warning !== null) flash('warning', $warning);
+            redirect_to('template-edit', ['kind'=>'diploma','program'=>$program]);
+        case 'template-background-delete':
+            if ($method !== 'POST') break;
+            $program = (string) ($_POST['program'] ?? '');
+            delete_template_background($program);
+            flash('success', 'Latar blanko dihapus.');
+            redirect_to('template-edit', ['kind'=>'diploma','program'=>$program]);
         case 'template-live-preview':
             if ($method !== 'POST') break;
             try {
@@ -258,7 +287,7 @@ try {
         'grade-save','grade-delete','issue','revoke' => 'graduate',
         'import-preview','import-commit' => ($_POST['kind'] ?? '') === 'grades' ? 'import-grades' : 'import',
         'xls-sample','csv-sample' => 'import',
-        'template-save' => 'template-edit',
+        'template-save','template-background-upload','template-background-delete' => 'template-edit',
         default => 'dashboard',
     };
     $query = match ($back) {

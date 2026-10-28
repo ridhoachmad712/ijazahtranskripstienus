@@ -6,3 +6,4 @@
 /storage/imports/*
 !/storage/imports/.gitkeep
 /config.local.php
+/storage/backgrounds/

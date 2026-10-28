@@ -308,6 +308,58 @@ function save_template_version(string $kind, string $program, array $source): in
     }
 }
 
+// Latar blanko hanya alat bantu kalibrasi di editor; tidak ikut versi template dan tidak dicetak.
+const TEMPLATE_BACKGROUND_TYPES = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp'];
+const TEMPLATE_BACKGROUND_MAX_BYTES = 10 * 1024 * 1024;
+
+function template_background_dir(): string
+{
+    return rtrim((string) app_config()['storage_root'], '/\\') . '/backgrounds';
+}
+
+function template_background_path(string $program): ?string
+{
+    if (!array_key_exists($program, programs())) return null;
+    foreach (TEMPLATE_BACKGROUND_TYPES as $extension) {
+        $path = template_background_dir() . '/diploma-' . $program . '.' . $extension;
+        if (is_file($path)) return $path;
+    }
+    return null;
+}
+
+function save_template_background(string $program, string $sourcePath): ?string
+{
+    if (!array_key_exists($program, programs())) throw new DomainException('Program studi tidak dikenal.');
+    $size = is_file($sourcePath) ? filesize($sourcePath) : false;
+    if ($size === false || $size === 0) throw new DomainException('Pilih gambar blanko yang akan diunggah.');
+    if ($size > TEMPLATE_BACKGROUND_MAX_BYTES) throw new DomainException('Ukuran gambar latar maksimal 10 MB.');
+    $info = @getimagesize($sourcePath);
+    $extension = TEMPLATE_BACKGROUND_TYPES[$info['mime'] ?? ''] ?? null;
+    if (!$info || $extension === null) throw new DomainException('Gunakan gambar JPG, PNG, atau WebP.');
+    [$width, $height] = $info;
+    if ($width <= $height) throw new DomainException('Gunakan gambar lanskap (lebar lebih besar dari tinggi), sesuai blanko ijazah.');
+    if ($width < 800 || $height < 560) throw new DomainException('Resolusi gambar terlalu kecil. Pindai blanko minimal 100 dpi.');
+    $directory = template_background_dir();
+    if (!is_dir($directory) && !mkdir($directory, 0770, true) && !is_dir($directory)) throw new RuntimeException('Direktori latar tidak dapat dibuat.');
+    $old = template_background_path($program);
+    $target = $directory . '/diploma-' . $program . '.' . $extension;
+    $temporary = $target . '.tmp';
+    if (!copy($sourcePath, $temporary)) throw new RuntimeException('Gambar latar gagal disimpan.');
+    if ($old !== null && $old !== $target) unlink($old);
+    if (!rename($temporary, $target)) throw new RuntimeException('Gambar latar gagal disimpan.');
+    audit('template', null, 'background_uploaded', 'diploma:' . $program);
+    $ratio = ($width / $height) / (297 / 210);
+    return abs($ratio - 1) > 0.03 ? 'Perbandingan ukuran gambar berbeda dari A4 lanskap, jadi gambar direntangkan agar pas. Pastikan pindaian mencakup seluruh tepi blanko.' : null;
+}
+
+function delete_template_background(string $program): void
+{
+    $path = template_background_path($program);
+    if ($path === null) return;
+    unlink($path);
+    audit('template', null, 'background_deleted', 'diploma:' . $program);
+}
+
 function documents_for(int $graduateId): array
 {
     $stmt = db()->prepare('SELECT * FROM documents WHERE graduate_id=? ORDER BY id DESC');

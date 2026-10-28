@@ -331,6 +331,53 @@
     updateAlignmentFeedback(selectedNode);
     updateDirty();
   });
+  const backgroundForm = document.getElementById('background-form');
+  const backgroundFile = document.getElementById('background-file');
+  const backgroundImage = document.getElementById('sheet-background');
+  const backgroundToggle = document.getElementById('toggle-background');
+  const backgroundOpacity = document.getElementById('background-opacity');
+  const backgroundOpacityValue = document.getElementById('background-opacity-value');
+  const storedPreference = (key) => { try { return localStorage.getItem(key); } catch { return null; } };
+  const storePreference = (key, value) => { try { localStorage.setItem(key, value); } catch { /* opsional */ } };
+  const confirmLeave = () => !updateDirty() || confirm('Ada perubahan template yang belum disimpan dan akan hilang saat halaman dimuat ulang. Lanjutkan?');
+
+  function applyBackground() {
+    if (!backgroundImage) return;
+    const opacity = Number(backgroundOpacity?.value || 60);
+    backgroundImage.hidden = !backgroundToggle?.checked;
+    backgroundImage.style.opacity = String(opacity / 100);
+    if (backgroundOpacityValue) backgroundOpacityValue.textContent = `${opacity}%`;
+  }
+
+  document.querySelectorAll('[data-background-pick]').forEach((button) => button.addEventListener('click', () => backgroundFile?.click()));
+  backgroundFile?.addEventListener('change', () => {
+    const file = backgroundFile.files?.[0];
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      alert('Ukuran gambar latar maksimal 10 MB.');
+      backgroundFile.value = '';
+      return;
+    }
+    if (!confirmLeave()) {
+      backgroundFile.value = '';
+      return;
+    }
+    leaving = true;
+    backgroundForm.submit();
+  });
+  document.getElementById('background-delete-form')?.addEventListener('submit', (event) => {
+    if (!confirm('Hapus latar blanko? Template tidak berubah.') || !confirmLeave()) {
+      event.preventDefault();
+      return;
+    }
+    leaving = true;
+  });
+  if (backgroundToggle) backgroundToggle.checked = storedPreference('stie-background-visible') !== '0';
+  if (backgroundOpacity) backgroundOpacity.value = storedPreference('stie-background-opacity') || backgroundOpacity.value;
+  backgroundToggle?.addEventListener('change', () => { storePreference('stie-background-visible', backgroundToggle.checked ? '1' : '0'); applyBackground(); });
+  backgroundOpacity?.addEventListener('input', () => { storePreference('stie-background-opacity', backgroundOpacity.value); applyBackground(); });
+  applyBackground();
+
   // Tombol "Buka PDF saat ini" membuka tab baru, jadi perubahan tetap dianggap belum tersimpan.
   form.addEventListener('submit', (event) => { if (event.submitter?.formTarget !== '_blank') leaving = true; });
   window.addEventListener('beforeunload', (event) => {

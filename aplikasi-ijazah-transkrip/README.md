@@ -37,6 +37,10 @@ Salin `config.example.php` menjadi `config.local.php`, lalu isi `base_url` denga
 
 Selama ada dokumen aktif (ijazah atau transkrip), identitas lulusan terkunci. Selama transkrip aktif, daftar nilai terkunci. Untuk memperbaiki data, batalkan dokumen terkait lebih dahulu.
 
+### Latar blanko di editor
+
+Pada editor ijazah, tombol **Unggah latar blanko** menerima pindaian/foto blanko kosong (JPG, PNG, atau WebP, lanskap, maks. 10 MB). Gambar direntangkan memenuhi kertas A4 lanskap di bawah teks sehingga posisi bidang dapat dicocokkan dengan kolom isian blanko. Kepekatan latar dapat diatur dan latar dapat disembunyikan. Latar disimpan per program studi di `storage/backgrounds`, tidak ikut versi template, dan **tidak pernah dicetak** pada PDF pratinjau maupun final. Untuk hasil paling akurat, pindai seluruh lembar hingga tepinya tanpa margin atau kemiringan.
+
 ### QR pada blanko
 
 Template awal **belum mencetak QR** karena posisi kosong pada blanko fisik belum disahkan. Editor selalu menampilkan kotak panduan QR yang dapat digeser; X, Y, dan ukuran disimpan bersama versi template meskipun opsi cetak QR belum dicentang. PDF pratinjau juga menampilkan kotak **PANDUAN QR** untuk kalibrasi, sedangkan PDF final hanya mencetak QR jika opsi cetak diaktifkan. Halaman verifikasi tetap tersedia untuk dokumen yang diterbitkan. Token QR adalah verifikasi catatan kampus, bukan pengganti [PISN](https://pisn.kemdiktisaintek.go.id/).

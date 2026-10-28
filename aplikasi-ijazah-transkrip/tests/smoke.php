@@ -97,6 +97,27 @@ try {
     foreach (['' => false, 'http://ijazah.example.ac.id' => false, 'https://localhost:8000' => false, 'https://127.0.0.1' => false, 'https://[::1]/app' => false, 'https://ijazah.example.ac.id' => true] as $url => $ok) {
         expect((qr_base_url_problem((string) $url) === null) === $ok, 'Pemeriksaan URL QR salah untuk "' . $url . '".');
     }
+    $makeImage = static function (string $path, int $width, int $height): string {
+        $image = imagecreatetruecolor($width, $height);
+        imagepng($image, $path);
+        imagedestroy($image);
+        return $path;
+    };
+    expect(template_background_path('AKUNTANSI') === null, 'Latar blanko tidak boleh ada sebelum diunggah.');
+    expect(save_template_background('AKUNTANSI', $makeImage($root . '/latar.png', 1169, 827)) === null, 'Latar A4 lanskap tidak boleh diberi peringatan rasio.');
+    expect(str_ends_with((string) template_background_path('AKUNTANSI'), 'diploma-AKUNTANSI.png') && template_background_path('MANAJEMEN') === null, 'Latar blanko tersimpan pada prodi yang salah.');
+    expect(save_template_background('AKUNTANSI', $makeImage($root . '/latar-lebar.png', 1400, 700)) !== null, 'Latar dengan rasio berbeda harus diberi peringatan.');
+    foreach (['potret' => $makeImage($root . '/latar-potret.png', 827, 1169), 'bukan gambar' => $root . '/import-bukan-gambar.txt'] as $label => $path) {
+        if (!is_file($path)) file_put_contents($path, 'bukan gambar');
+        try {
+            save_template_background('AKUNTANSI', $path);
+            throw new RuntimeException('Latar ' . $label . ' seharusnya ditolak.');
+        } catch (DomainException) {
+        }
+    }
+    expect(!str_contains(render_diploma_html(sample_template_snapshot(active_template('diploma', 'AKUNTANSI')), null, true), 'sheet-background'), 'Latar blanko tidak boleh masuk ke PDF.');
+    delete_template_background('AKUNTANSI');
+    expect(template_background_path('AKUNTANSI') === null, 'Latar blanko belum terhapus.');
     $previewTemplate = active_template('diploma', 'AKUNTANSI');
     $previewSource = ['text'=>$previewTemplate['settings']['texts'], 'field'=>$previewTemplate['settings']['fields'], 'qr'=>$previewTemplate['settings']['qr']];
     $previewSource['text']['opening'] = 'Redaksi pratinjau yang belum disimpan';
@@ -198,6 +219,8 @@ try {
     if (is_dir($root . '/documents')) rmdir($root . '/documents');
     foreach (glob($root . '/imports/*') ?: [] as $file) unlink($file);
     if (is_dir($root . '/imports')) rmdir($root . '/imports');
+    foreach (glob($root . '/backgrounds/*') ?: [] as $file) unlink($file);
+    if (is_dir($root . '/backgrounds')) rmdir($root . '/backgrounds');
     foreach (glob($root . '/*') ?: [] as $file) if (is_file($file)) unlink($file);
     rmdir($root);
 }
