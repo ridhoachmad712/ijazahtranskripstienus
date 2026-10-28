@@ -1,0 +1,11 @@
+# Dipakai jika document root menunjuk ke root repo ini, misalnya fitur Git hPanel yang
+# menarik repo langsung ke public_html/ijazah. Semua permintaan diarahkan ke
+# aplikasi-ijazah-transkrip/public; kode, data, .git, dan dokumen rancangan tidak terbuka.
+Options -Indexes
+DirectoryIndex index.php
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteRule ^aplikasi-ijazah-transkrip/public/ - [L]
+    RewriteRule ^(.*)$ aplikasi-ijazah-transkrip/public/$1 [L]
+</IfModule>

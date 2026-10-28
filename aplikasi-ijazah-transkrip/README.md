@@ -23,6 +23,37 @@ Jangan menuliskan kata sandi di README atau berkas lain di repositori. Buat atau
 
 Database dibuat otomatis di `storage/app.sqlite`. Folder `storage` harus dapat ditulis oleh proses PHP. Pada server, atur **Document Root ke folder `public`** dan blok akses web langsung ke `app`, `storage`, `vendor`, dan `config.local.php`.
 
+## Pemasangan di hosting (contoh: ijazah.stienus.ac.id di Hostinger)
+
+Kebutuhan: PHP 8.3 (hPanel → **Advanced → PHP Configuration**), akses **SSH** (hPanel → **Advanced → SSH Access**), dan SSL aktif untuk subdomain. Repo berisi dua folder; aplikasinya ada di `aplikasi-ijazah-transkrip`.
+
+**Cara A (disarankan): kode di luar `public_html`, subdomain menunjuk ke folder `public` lewat symlink.**
+
+```bash
+cd ~/domains/stienus.ac.id
+git clone https://github.com/ridhoachmad712/ijazahtranskripstienus.git ijazah-app
+cd ijazah-app/aplikasi-ijazah-transkrip
+php -v                                   # harus 8.3; jika tidak, pakai /opt/alt/php83/usr/bin/php
+composer install --no-dev --optimize-autoloader
+cp config.example.php config.local.php   # lalu ubah base_url dan verify_contact
+php bin/create-admin.php admin           # ketik kata sandi (minimal 12 karakter), Enter
+mv ~/domains/stienus.ac.id/public_html/ijazah ~/domains/stienus.ac.id/public_html/ijazah.lama
+ln -s ~/domains/stienus.ac.id/ijazah-app/aplikasi-ijazah-transkrip/public ~/domains/stienus.ac.id/public_html/ijazah
+```
+
+Isi `config.local.php` di server minimal: `'base_url' => 'https://ijazah.stienus.ac.id'`. Periksa isi folder `public_html/ijazah.lama` sebelum menghapusnya.
+
+**Cara B: repo ditarik langsung ke `public_html/ijazah`** (misalnya lewat hPanel → **Advanced → Git**, folder harus kosong). Berkas `.htaccess` di root repo mengarahkan semua alamat ke `aplikasi-ijazah-transkrip/public` dan menutup kode, data, `.git`, serta dokumen rancangan. Setelah repo ditarik, tetap jalankan `composer install --no-dev --optimize-autoloader`, buat `config.local.php`, dan `php bin/create-admin.php admin` di folder `public_html/ijazah/aplikasi-ijazah-transkrip` lewat SSH.
+
+**Memperbarui aplikasi** setelah ada perubahan di GitHub (Cara A; untuk Cara B ganti foldernya atau tekan Deploy di hPanel):
+
+```bash
+cd ~/domains/stienus.ac.id/ijazah-app && git pull
+cd aplikasi-ijazah-transkrip && composer install --no-dev --optimize-autoloader
+```
+
+Database (`storage/app.sqlite`), PDF arsip (`storage/documents`), latar blanko, dan `config.local.php` tidak ada di git sehingga tidak tertimpa saat `git pull`. Cadangkan folder `storage` dan `config.local.php` secara berkala, misalnya lewat fitur backup hosting.
+
 ## URL QR sebelum penerbitan resmi
 
 Salin `config.example.php` menjadi `config.local.php`, lalu isi `base_url` dengan alamat **HTTPS publik yang stabil** untuk aplikasi ini. Selama opsi cetak QR aktif, aplikasi menolak menerbitkan ijazah jika `base_url` kosong, bukan HTTPS, atau masih menunjuk localhost. QR memakai token acak dan membuka `index.php?r=verify&t=...`.
