@@ -338,7 +338,7 @@
     event.preventDefault();
     event.returnValue = '';
   });
-  gridToggle?.addEventListener('change', () => { grid.hidden = !gridToggle.checked; updateAlignmentFeedback(sheet?.querySelector('.canvas-selected')); });
+  gridToggle?.addEventListener('change', () => { grid?.toggleAttribute('hidden', !gridToggle.checked); updateAlignmentFeedback(sheet?.querySelector('.canvas-selected')); });
   document.getElementById('toggle-zoom')?.addEventListener('click', (event) => {
     zoomed = !zoomed;
     event.currentTarget.textContent = zoomed ? 'Pas halaman' : 'Perbesar pratinjau';
