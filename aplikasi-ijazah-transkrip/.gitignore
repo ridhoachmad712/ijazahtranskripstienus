@@ -7,3 +7,6 @@
 !/storage/imports/.gitkeep
 /config.local.php
 /storage/backgrounds/
+/storage/fonts/
+/storage/cambria_*
+/storage/installed-fonts.json

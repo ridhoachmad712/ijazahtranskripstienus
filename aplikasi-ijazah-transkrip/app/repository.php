@@ -63,34 +63,26 @@ function default_transcript_settings(string $program): array
             'title' => 'TRANSKRIP NILAI',
             'program_accreditation' => '',
             'issue_place' => 'Makassar',
-            'left_role' => 'Ketua STIE Nusantara Makassar,',
-            'right_role' => 'Wakil Ketua Bidang Akademik,',
-            'left_name' => '',
-            'right_name' => '',
-            'left_nidn' => '',
-            'right_nidn' => '',
+            'signer_role' => 'Ketua STIE Nusantara Makassar,',
+            'signer_name' => '',
+            'signer_nidn' => '',
         ],
         'fields' => [
-            'title' => ['label'=>'Judul','x'=>20,'y'=>38,'w'=>170,'pt'=>15,'align'=>'center'],
-            'number' => ['label'=>'Nomor transkrip','x'=>20,'y'=>45,'w'=>170,'pt'=>10,'align'=>'center'],
-            'identity' => ['label'=>'Identitas lulusan','x'=>15,'y'=>53,'w'=>180,'pt'=>9.5,'align'=>'left'],
-            'program_accreditation' => ['label'=>'Akreditasi prodi','x'=>15,'y'=>69,'w'=>180,'pt'=>9,'align'=>'left'],
-            'grades' => ['label'=>'Tabel nilai','x'=>12,'y'=>75,'w'=>186,'pt'=>9,'align'=>'left','h'=>150],
-            'total_credits' => ['label'=>'Jumlah SKS','x'=>12,'y'=>228,'w'=>80,'pt'=>9.5,'align'=>'left'],
-            'gpa' => ['label'=>'IPK','x'=>100,'y'=>228,'w'=>98,'pt'=>9.5,'align'=>'left'],
-            'thesis' => ['label'=>'Judul skripsi','x'=>12,'y'=>234,'w'=>186,'pt'=>9,'align'=>'left'],
-            'issue' => ['label'=>'Tempat dan tanggal','x'=>112,'y'=>246,'w'=>86,'pt'=>10,'align'=>'center'],
-            'left_role' => ['label'=>'Jabatan kiri','x'=>12,'y'=>251,'w'=>86,'pt'=>10,'align'=>'center'],
-            'right_role' => ['label'=>'Jabatan kanan','x'=>112,'y'=>251,'w'=>86,'pt'=>10,'align'=>'center'],
-            'left_name' => ['label'=>'Nama pejabat kiri','x'=>12,'y'=>275,'w'=>86,'pt'=>10,'align'=>'center'],
-            'right_name' => ['label'=>'Nama pejabat kanan','x'=>112,'y'=>275,'w'=>86,'pt'=>10,'align'=>'center'],
-            'left_nidn' => ['label'=>'NIDN kiri','x'=>12,'y'=>280,'w'=>86,'pt'=>9,'align'=>'center'],
-            'right_nidn' => ['label'=>'NIDN kanan','x'=>112,'y'=>280,'w'=>86,'pt'=>9,'align'=>'center'],
+            'title' => ['label'=>'Judul','x'=>20,'y'=>36,'w'=>170,'pt'=>16,'align'=>'center'],
+            'number' => ['label'=>'Nomor transkrip','x'=>20,'y'=>44,'w'=>170,'pt'=>9.5,'align'=>'center'],
+            'identity' => ['label'=>'Identitas lulusan','x'=>12,'y'=>51,'w'=>186,'pt'=>9,'align'=>'left'],
+            'program_accreditation' => ['label'=>'Akreditasi prodi','x'=>12,'y'=>72,'w'=>186,'pt'=>8.5,'align'=>'left'],
+            'grades' => ['label'=>'Tabel nilai','x'=>12,'y'=>78,'w'=>186,'pt'=>9,'align'=>'left','h'=>145,'row'=>4.6],
+            'summary' => ['label'=>'Jumlah SKS dan IPK','x'=>12,'y'=>226,'w'=>186,'pt'=>9.5,'align'=>'left'],
+            'thesis' => ['label'=>'Judul skripsi','x'=>12,'y'=>238,'w'=>186,'pt'=>9,'align'=>'left'],
+            'issue' => ['label'=>'Tempat dan tanggal','x'=>118,'y'=>254,'w'=>80,'pt'=>10,'align'=>'center'],
+            'signer_role' => ['label'=>'Jabatan penandatangan','x'=>118,'y'=>259,'w'=>80,'pt'=>10,'align'=>'center'],
+            'signer_name' => ['label'=>'Nama penandatangan','x'=>118,'y'=>280,'w'=>80,'pt'=>10.5,'align'=>'center'],
+            'signer_nidn' => ['label'=>'NIDN penandatangan','x'=>118,'y'=>285,'w'=>80,'pt'=>9,'align'=>'center'],
         ],
         'show_thesis' => true,
     ];
 }
-
 function page_size(string $kind): array
 {
     return $kind === 'diploma' ? ['w'=>297, 'h'=>210, 'label'=>'A4 lanskap'] : ['w'=>210, 'h'=>297, 'label'=>'A4 potret'];
@@ -99,14 +91,23 @@ function page_size(string $kind): array
 // Template transkrip sebelum tata letak berposisi: satu penandatangan dan header teks.
 function legacy_transcript_settings(array $saved): array
 {
-    $texts = ['right_role'=>'', 'right_name'=>'', 'right_nidn'=>''];
-    foreach (['title'=>'title', 'accreditation'=>'program_accreditation', 'issue_place'=>'issue_place', 'signer_role'=>'left_role', 'signer_name'=>'left_name', 'signer_nidn'=>'left_nidn'] as $old => $new) {
+    $texts = [];
+    foreach (['title'=>'title', 'accreditation'=>'program_accreditation', 'issue_place'=>'issue_place', 'signer_role'=>'signer_role', 'signer_name'=>'signer_name', 'signer_nidn'=>'signer_nidn'] as $old => $new) {
         if (trim((string) ($saved[$old] ?? '')) !== '') $texts[$new] = trim((string) $saved[$old]);
     }
-    if (isset($texts['left_role']) && !str_ends_with($texts['left_role'], ',')) $texts['left_role'] .= ',';
+    if (isset($texts['signer_role']) && !str_ends_with($texts['signer_role'], ',')) $texts['signer_role'] .= ',';
     return ['texts'=>$texts, 'show_thesis'=>(bool) ($saved['show_thesis'] ?? true)];
 }
-function seed_templates(PDO $db): void
+
+// Tata letak sementara dengan dua pejabat: pejabat kiri menjadi satu-satunya penandatangan, posisi kembali ke bawaan.
+function two_signer_transcript_settings(array $saved): array
+{
+    $texts = array_diff_key($saved['texts'], array_flip(['left_role','right_role','left_name','right_name','left_nidn','right_nidn']));
+    foreach (['role','name','nidn'] as $part) {
+        if (trim((string) ($saved['texts']['left_' . $part] ?? '')) !== '') $texts['signer_' . $part] = trim((string) $saved['texts']['left_' . $part]);
+    }
+    return ['texts'=>$texts, 'show_thesis'=>(bool) ($saved['show_thesis'] ?? true)];
+}function seed_templates(PDO $db): void
 {
     $count = (int) $db->query('SELECT COUNT(*) FROM templates')->fetchColumn();
     if ($count > 0) {
@@ -482,7 +483,12 @@ function normalized_template_settings(string $kind, string $program, array $save
 {
     $defaults = $kind === 'diploma' ? default_diploma_settings($program) : default_transcript_settings($program);
     if ($kind === 'transcript' && !isset($saved['fields'])) $saved = legacy_transcript_settings($saved);
-    return array_replace_recursive($defaults, $saved);
+    elseif ($kind === 'transcript' && isset($saved['texts']['left_role'])) $saved = two_signer_transcript_settings($saved);
+    $settings = array_replace_recursive($defaults, $saved);
+    // Bidang yang tidak lagi dipakai tata letak saat ini dibuang.
+    $settings['texts'] = array_intersect_key($settings['texts'], $defaults['texts']);
+    $settings['fields'] = array_intersect_key($settings['fields'], $defaults['fields']);
+    return $settings;
 }
 
 function template_settings_from_source(array $current, array $source): array
@@ -491,10 +497,10 @@ function template_settings_from_source(array $current, array $source): array
     $page = page_size($current['kind']);
     foreach ($settings['texts'] as $key => $_) $settings['texts'][$key] = trim((string) ($source['text'][$key] ?? ''));
     foreach ($settings['fields'] as $key => $field) {
-        foreach (array_key_exists('h', $field) ? ['x','y','w','pt','h'] : ['x','y','w','pt'] as $part) {
+        foreach (array_merge(['x','y','w','pt'], array_intersect(['h','row'], array_keys($field))) as $part) {
             $value = filter_var($source['field'][$key][$part] ?? null, FILTER_VALIDATE_FLOAT);
-            $max = match ($part) { 'y', 'h' => $page['h'], 'pt' => 48, default => $page['w'] };
-            $min = match ($part) { 'w', 'h' => 10, 'pt' => 5, default => 0 };
+            $max = match ($part) { 'y', 'h' => $page['h'], 'pt' => 48, 'row' => 20, default => $page['w'] };
+            $min = match ($part) { 'w', 'h' => 10, 'pt' => 5, 'row' => 3, default => 0 };
             if ($value === false || $value < $min || $value > $max) throw new DomainException('Posisi atau ukuran bidang ' . $field['label'] . ' tidak valid.');
             $settings['fields'][$key][$part] = (float) $value;
         }
@@ -652,7 +658,7 @@ function issue_document(int $graduateId, string $kind): int
     if ($kind === 'transcript') {
         if (official_totals_match(grade_summary($grades), $graduate) === false) throw new DomainException('Jumlah SKS/IPK resmi tidak cocok dengan nilai mata kuliah. Periksa kembali data dan aturan nilai.');
     }
-    if ($kind === 'transcript' && trim((string) ($template['settings']['texts']['left_name'] ?? '')) === '' && trim((string) ($template['settings']['texts']['right_name'] ?? '')) === '') throw new DomainException('Nama penandatangan transkrip belum diisi di template.');
+    if ($kind === 'transcript' && trim((string) ($template['settings']['texts']['signer_name'] ?? '')) === '') throw new DomainException('Nama penandatangan transkrip belum diisi di template.');
     if ($kind === 'diploma' && (($template['settings']['texts']['left_name'] ?? '') === '' || ($template['settings']['texts']['right_name'] ?? '') === '')) throw new DomainException('Nama kedua penandatangan ijazah belum diisi di template.');
     if ($kind === 'diploma' && trim((string) ($template['settings']['texts']['program_accreditation'] ?? '')) === '') throw new DomainException('Redaksi akreditasi program studi belum diisi di template ijazah.');
     if ($kind === 'diploma' && !empty($template['settings']['qr']['enabled']) && ($problem = qr_base_url_problem((string) app_config()['base_url'])) !== null) throw new DomainException($problem . ' Ijazah dengan QR belum dapat diterbitkan.');

@@ -78,7 +78,14 @@ Selama ada dokumen aktif (ijazah atau transkrip), identitas lulusan terkunci. Se
 
 ### Transkrip satu lembar
 
-Transkrip dicetak pada **satu lembar A4 potret** dengan editor yang sama seperti ijazah: judul, nomor, blok identitas, tabel nilai, jumlah SKS, IPK, judul skripsi, tempat dan tanggal, serta dua pejabat (kiri dan kanan) dapat digeser di atas pindaian blanko transkrip. Tabel nilai dibagi dua kolom sama banyak (misalnya 25 di kiri dan 25 di kanan) dan hanya memuat kode, nama mata kuliah, SKS, dan nilai huruf. Jika mata kuliah tidak muat pada **tinggi area** tabel, ukuran hurufnya diperkecil otomatis (paling kecil 5 pt) sehingga transkrip tetap satu lembar; editor menampilkan ukuran huruf yang dipakai. Kosongkan nama dan jabatan salah satu pejabat jika transkrip hanya ditandatangani satu orang. Template transkrip lama otomatis dibaca dengan tata letak baru (penandatangan lama menjadi pejabat kiri).
+Transkrip dicetak pada **satu lembar A4 potret** dengan huruf **Cambria** dan editor yang sama seperti ijazah: judul, nomor, blok identitas, tabel nilai, pita jumlah SKS dan IPK, judul skripsi, tempat dan tanggal, serta **satu penandatangan** (jabatan, nama, NIDN) dapat digeser di atas pindaian blanko transkrip. Tabel nilai dibagi dua kolom sama banyak (misalnya 25 di kiri dan 25 di kanan) dan hanya memuat kode, nama mata kuliah, SKS, dan nilai huruf. **Tinggi baris** tabel diatur di panel atur (bawaan 4,6 mm). Jika mata kuliah tidak muat pada **tinggi area** tabel, tinggi baris diturunkan lebih dahulu, lalu ukuran huruf (paling kecil 5 pt), sehingga transkrip tetap satu lembar; editor menampilkan nilai yang dipakai. Template transkrip lama otomatis dibaca dengan tata letak baru (penandatangan lama atau pejabat kiri menjadi penandatangan; posisi kembali ke bawaan).
+
+**Memasang font Cambria.** Cambria milik Microsoft sehingga tidak disertakan di repositori. Salin empat berkas berikut ke folder `storage/fonts` di server (folder ini tidak ikut git). Tanpa berkas tersebut transkrip dicetak dengan Times dan editor menampilkan peringatan.
+
+| Berkas | Sumber di Windows |
+|---|---|
+| `cambria.ttf` | diekstrak dari `C:\Windows\Fonts\cambria.ttc`: `php bin/extract-ttc.php C:\Windows\Fonts\cambria.ttc storage/fonts/cambria.ttf` |
+| `cambriab.ttf`, `cambriai.ttf`, `cambriaz.ttf` | disalin langsung dari `C:\Windows\Fonts` |
 
 ### Latar blanko di editor
 

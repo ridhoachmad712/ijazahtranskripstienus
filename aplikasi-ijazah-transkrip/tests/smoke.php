@@ -178,7 +178,7 @@ try {
             $settings['texts']['program_accreditation'] = 'Akreditasi prodi contoh untuk pengujian';
             $settings['qr'] = ['enabled'=>true,'x'=>12,'y'=>13,'size'=>22];
         } else {
-            $settings['texts']['left_name'] = 'Pejabat Transkrip';
+            $settings['texts']['signer_name'] = 'Pejabat Transkrip';
         }
         db()->prepare('UPDATE templates SET settings_json=? WHERE id=?')->execute([json_encode($settings, JSON_UNESCAPED_UNICODE), $template['id']]);
     }
@@ -259,13 +259,21 @@ try {
     $longSnapshot = json_decode($longDoc['snapshot_json'], true);
     expect(transcript_block_html($longSnapshot)['grades_pt'] < 9, 'Huruf tabel nilai harus diperkecil saat mata kuliah sangat banyak.');
     $fifty = array_map(static fn($i) => ['course_code'=>sprintf('K%02d', $i), 'course_name'=>'Mata Kuliah ' . $i, 'credits'=>3, 'grade_letter'=>'A', 'grade_weight'=>4], range(1, 50));
-    [$gradesHtml, $gradesPt] = transcript_grades_html($fifty, default_transcript_settings('AKUNTANSI')['fields']['grades']);
-    expect(substr_count($gradesHtml, '<table class="tr-grades">') === 2 && substr_count($gradesHtml, '<tr><td class="g-code">K') === 50 && strpos($gradesHtml, 'K25') < strpos($gradesHtml, 'K26') && $gradesPt === 9.0, 'Tabel nilai harus dua kolom 25 dan 25 tanpa diperkecil.');
+    $gradesField = default_transcript_settings('AKUNTANSI')['fields']['grades'];
+    [$gradesHtml, $gradesPt, $gradesRow] = transcript_grades_html($fifty, $gradesField);
+    expect(substr_count($gradesHtml, '<table class="tr-grades">') === 2 && preg_match_all('#<td class="g-code" style="height:4.6mm">K#', $gradesHtml) === 50 && strpos($gradesHtml, 'K25') < strpos($gradesHtml, 'K26') && $gradesPt === 9.0 && $gradesRow === 4.6, 'Tabel nilai harus dua kolom 25 dan 25 dengan tinggi baris dan huruf sesuai template.');
+    [, $tallPt, $tallRow] = transcript_grades_html($fifty, array_replace($gradesField, ['row'=>8]));
+    expect($tallPt === 9.0 && $tallRow < 8 && $tallRow > 4.6, 'Tinggi baris harus diturunkan lebih dahulu sebelum ukuran huruf.');
+    [, $shortPt, $shortRow] = transcript_grades_html($fifty, array_replace($gradesField, ['row'=>3.5]));
+    expect($shortPt === 9.0 && $shortRow === 3.5, 'Tinggi baris yang lebih kecil harus dipakai apa adanya.');
     $leftTable = substr($gradesHtml, 0, strpos($gradesHtml, '<td class="g-gap">'));
     expect(str_contains($leftTable, '>K25<') && !str_contains($leftTable, '>K26<'), 'Kolom kiri harus berisi 25 mata kuliah pertama.');
-    expect(!str_contains($gradesHtml, 'Mutu') && str_contains($gradesHtml, '<th class="g-code">Kode</th><th class="g-name">Mata Kuliah</th><th class="g-sks">SKS</th><th class="g-grade">Nilai</th>'), 'Tabel nilai hanya berisi kode, mata kuliah, SKS, dan nilai.');
+    expect(!str_contains($gradesHtml, 'Mutu') && preg_match('#>Kode</th><th class="g-name"[^>]*>Mata Kuliah</th><th class="g-sks"[^>]*>SKS</th><th class="g-grade"[^>]*>Nilai</th></tr></thead>#', $gradesHtml) === 1, 'Tabel nilai hanya berisi kode, mata kuliah, SKS, dan nilai.');
     $legacy = normalized_template_settings('transcript', 'AKUNTANSI', ['title'=>'TRANSKRIP AKADEMIK','signer_role'=>'Ketua','signer_name'=>'Dr. Lama','signer_nidn'=>'NIDN 1','issue_place'=>'Gowa','show_thesis'=>false,'institution'=>'X']);
-    expect($legacy['texts']['title'] === 'TRANSKRIP AKADEMIK' && $legacy['texts']['left_role'] === 'Ketua,' && $legacy['texts']['left_name'] === 'Dr. Lama' && $legacy['texts']['right_role'] === '' && $legacy['show_thesis'] === false && isset($legacy['fields']['grades']) && !isset($legacy['institution']), 'Template transkrip lama tidak termigrasi ke tata letak baru.');
+    expect($legacy['texts']['title'] === 'TRANSKRIP AKADEMIK' && $legacy['texts']['signer_role'] === 'Ketua,' && $legacy['texts']['signer_name'] === 'Dr. Lama' && $legacy['show_thesis'] === false && isset($legacy['fields']['grades']['row']) && !isset($legacy['institution']), 'Template transkrip lama tidak termigrasi ke tata letak baru.');
+    $twoSigners = normalized_template_settings('transcript', 'AKUNTANSI', ['texts'=>['title'=>'T','left_role'=>'Ketua,','left_name'=>'Dr. Kiri','left_nidn'=>'N1','right_role'=>'Wakil,','right_name'=>'Dr. Kanan','right_nidn'=>'N2','issue_place'=>'Gowa'], 'fields'=>['left_name'=>['label'=>'x','x'=>1,'y'=>1,'w'=>50,'pt'=>9,'align'=>'left'], 'gpa'=>['label'=>'y','x'=>1,'y'=>1,'w'=>50,'pt'=>9,'align'=>'left']], 'show_thesis'=>true]);
+    expect($twoSigners['texts']['signer_name'] === 'Dr. Kiri' && $twoSigners['texts']['signer_nidn'] === 'N1' && $twoSigners['texts']['issue_place'] === 'Gowa' && !isset($twoSigners['texts']['right_name']) && !isset($twoSigners['fields']['left_name']) && !isset($twoSigners['fields']['gpa']) && isset($twoSigners['fields']['signer_name'], $twoSigners['fields']['summary']), 'Template transkrip dua pejabat tidak termigrasi ke satu penandatangan.');
+    expect(!cambria_installed() && transcript_font_family() === '"Times New Roman",serif', 'Tanpa berkas Cambria, transkrip harus memakai Times.');
 
     // Paket perbaikan cepat: hapus lulusan, paginasi, SKS bulat, tempat terbit, pratinjau impor.
     try {

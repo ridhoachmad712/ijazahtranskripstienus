@@ -82,13 +82,20 @@
     inspectWrap('auto').hidden = isQr || hasText;
     inspectWrap('qr').hidden = !isQr;
     inspectWrap('h').hidden = isQr || !fieldInput(key, 'h');
+    inspectWrap('row').hidden = isQr || !fieldInput(key, 'row');
     inspectWrap('fit').hidden = !selectedNode.dataset.fit;
     if (selectedNode.dataset.fit && inspectorFitNote) {
-      const wanted = numberValue(fieldInput(key, 'pt'), 9);
-      const used = Number(selectedNode.dataset.fitPt || wanted);
-      inspectorFitNote.textContent = used < wanted
-        ? `Agar tetap satu lembar, huruf tabel diperkecil otomatis menjadi ${String(used).replace('.', ',')} pt. Tambah tinggi area jika ingin huruf lebih besar.`
-        : 'Seluruh mata kuliah muat pada ukuran huruf ini.';
+      const wantedPt = numberValue(fieldInput(key, 'pt'), 9);
+      const wantedRow = numberValue(fieldInput(key, 'row'), 0);
+      const usedPt = Number(selectedNode.dataset.fitPt || wantedPt);
+      const usedRow = Number(selectedNode.dataset.fitRow || wantedRow);
+      const decimal = (value) => String(Math.round(value * 100) / 100).replace('.', ',');
+      const changes = [];
+      if (usedRow < wantedRow - 0.05) changes.push(`tinggi baris menjadi ${decimal(usedRow)} mm`);
+      if (usedPt < wantedPt) changes.push(`huruf menjadi ${decimal(usedPt)} pt`);
+      inspectorFitNote.textContent = changes.length
+        ? `Agar tetap satu lembar, ${changes.join(' dan ')} (disesuaikan otomatis). Tambah tinggi area jika ingin lebih lega.`
+        : 'Seluruh mata kuliah muat dengan tinggi baris dan ukuran huruf ini.';
     }
     inspectInputs.forEach((input) => {
       const target = inspectTarget(input.dataset.inspect);
@@ -127,7 +134,7 @@
         fontSize: `${points * 96 / 72}px`, textAlign: align,
       });
       if (node.classList.contains('canvas-block')) {
-        if (node.dataset.fit) fitBlock(node, points);
+        if (node.dataset.fit) fitBlock(node, points, numberValue(fieldInput(key, 'row'), 0));
         return;
       }
       const textInput = form.elements.namedItem(`text[${key}]`);
@@ -168,15 +175,27 @@
     syncInspector();
   }
 
-  // Sama seperti PDF: huruf tabel diperkecil bertahap sampai seluruh baris muat di tinggi area.
-  function fitBlock(node, points) {
-    let size = points;
-    while (size > 5 && node.scrollHeight > node.clientHeight + 1) {
-      size -= 0.25;
+  // Sama seperti PDF: jika tabel tidak muat, tinggi baris diturunkan lebih dahulu, baru ukuran huruf.
+  function fitBlock(node, points, wantedRow) {
+    const cells = [...node.querySelectorAll('.tr-grades th, .tr-grades td')];
+    const overflowing = () => node.scrollHeight > node.clientHeight + 1;
+    const apply = (size, row) => {
       node.style.fontSize = `${size * 96 / 72}px`;
+      cells.forEach((cell) => { cell.style.height = row > 0 ? `${row}mm` : ''; });
+    };
+    let size = points;
+    let row = wantedRow;
+    apply(size, row);
+    while (overflowing() && (row > 0 || size > 5)) {
+      const textRow = size * 25.4 / 72 * 1.15 + 0.7;
+      if (row > textRow) row = Math.max(textRow, row - 0.1);
+      else if (size > 5) { size -= 0.25; row = Math.min(row, wantedRow); }
+      else row = 0;
+      apply(size, row);
     }
     node.dataset.fitPt = String(size);
-    node.classList.toggle('canvas-overflow', node.scrollHeight > node.clientHeight + 1);
+    node.dataset.fitRow = String(Math.round(row * 10) / 10);
+    node.classList.toggle('canvas-overflow', overflowing());
   }
 
   function schedulePreview() {
