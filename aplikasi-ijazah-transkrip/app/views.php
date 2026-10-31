@@ -153,7 +153,7 @@ function graduate_form_page(?array $graduate = null): void
         'nim'=>['NIM','text',true], 'name'=>['Nama resmi','text',true], 'birth_place'=>['Tempat lahir','text',false],
         'birth_date'=>['Tanggal lahir','date',false], 'education_program'=>['Program pendidikan','text',false],
         'graduation_date'=>['Tanggal lulus','date',false], 'diploma_number'=>['Nomor ijazah nasional','text',false],
-        'transcript_number'=>['Nomor transkrip','text',false], 'issue_date'=>['Tanggal penerbitan','date',false],
+        'issue_date'=>['Tanggal penerbitan','date',false],
         'official_credits'=>['Total SKS resmi','number',false], 'official_gpa'=>['IPK resmi','number',false],
         'thesis_title'=>['Judul skripsi','text',false],
     ];

@@ -23,7 +23,7 @@ try {
     page_footer();
     $emptyMenu = (string) ob_get_clean();
     expect(!str_contains($emptyMenu, 'r=grades'), 'Menu Nilai muncul sebelum ada lulusan.');
-    $sample = ['nim'=>'0012345678','nama_lengkap'=>'Contoh Lulusan','tempat_lahir'=>'Makassar','tanggal_lahir'=>'2002-04-18','kode_prodi'=>'AKUNTANSI','program_pendidikan'=>'S1','tanggal_lulus'=>'2026-08-15','nomor_ijazah_nasional'=>'CONTOH-001','nomor_transkrip'=>'CONTOH-TR-001','tanggal_terbit'=>'2026-09-01','judul_skripsi'=>'Contoh judul skripsi','total_sks_resmi'=>'6','ipk_resmi'=>'3.50'];
+    $sample = ['nim'=>'0012345678','nama_lengkap'=>'Contoh Lulusan','tempat_lahir'=>'Makassar','tanggal_lahir'=>'2002-04-18','kode_prodi'=>'AKUNTANSI','program_pendidikan'=>'S1','tanggal_lulus'=>'2026-08-15','nomor_ijazah_nasional'=>'CONTOH-001','tanggal_terbit'=>'2026-09-01','judul_skripsi'=>'Contoh judul skripsi','total_sks_resmi'=>'6','ipk_resmi'=>'3.50'];
     $path = $root . '/template-lulusan.xls';
     write_xls_template('graduates', $path);
     expect(bin2hex((string) file_get_contents($path, false, null, 0, 8)) === 'd0cf11e0a1b11ae1', 'Template harus berupa XLS asli.');
@@ -36,7 +36,7 @@ try {
     $rows = read_excel_file($path, 'xls', import_headers('graduates'));
     expect(count($rows) === 1 && $rows[0]['nim'] === '0012345678', 'XLS gagal dibaca atau nol awal NIM hilang.');
 
-    $newGraduate = array_replace($sample, ['nim'=>'0088888888','nomor_ijazah_nasional'=>'CONTOH-IMP-001','nomor_transkrip'=>'CONTOH-IMP-TR-001','total_sks_resmi'=>'5','ipk_resmi'=>'3.60']);
+    $newGraduate = array_replace($sample, ['nim'=>'0088888888','nomor_ijazah_nasional'=>'CONTOH-IMP-001','total_sks_resmi'=>'5','ipk_resmi'=>'3.60']);
     $graduatePreview = make_import_preview_from_rows([array_replace($newGraduate, ['_line'=>2])], 'graduates');
     expect(!$graduatePreview['errors'] && $graduatePreview['graduate_count'] === 1, 'Pratinjau impor lulusan gagal.');
     save_import_preview($graduatePreview);
@@ -112,7 +112,7 @@ try {
     save_import_preview(make_import_preview_from_rows([array_replace($newGraduate, ['_line'=>2])], 'graduates'));
     commit_import('graduates');
     expect(count(grades_for($importedId)) === 3, 'Impor ulang lulusan menghapus nilai yang sudah tersimpan.');
-    $blankTotals = array_replace($newGraduate, ['nim'=>'0077777777','nomor_ijazah_nasional'=>'CONTOH-IMP-002','nomor_transkrip'=>'CONTOH-IMP-TR-002','total_sks_resmi'=>'','ipk_resmi'=>'','_line'=>2]);
+    $blankTotals = array_replace($newGraduate, ['nim'=>'0077777777','nomor_ijazah_nasional'=>'CONTOH-IMP-002','total_sks_resmi'=>'','ipk_resmi'=>'','_line'=>2]);
     save_import_preview(make_import_preview_from_rows([$blankTotals], 'graduates'));
     commit_import('graduates');
     $blankGraduate = find_graduate_by_nim('0077777777');
@@ -207,7 +207,7 @@ try {
     $id = save_graduate([
         'nim'=>'0012345678','name'=>'Contoh Lulusan','birth_place'=>'Makassar','birth_date'=>'2002-04-18',
         'program_code'=>'AKUNTANSI','education_program'=>'S1','graduation_date'=>'2026-08-15',
-        'diploma_number'=>'CONTOH-NOMOR-001','transcript_number'=>'CONTOH-TR-001','issue_date'=>'2026-09-01',
+        'diploma_number'=>'CONTOH-NOMOR-001','issue_date'=>'2026-09-01',
         'thesis_title'=>'Contoh judul skripsi','official_credits'=>'6','official_gpa'=>'3.50',
     ]);
     save_grade($id, ['position'=>1,'course_code'=>'AKT001','course_name'=>'Pengantar Akuntansi','credits'=>3,'grade_letter'=>'A','grade_weight'=>4,'group_name'=>'Inti']);
@@ -263,7 +263,7 @@ try {
     $longId = save_graduate([
         'nim'=>'0099999999','name'=>'Lulusan Dengan Banyak Mata Kuliah','birth_place'=>'Makassar','birth_date'=>'2002-01-01',
         'program_code'=>'AKUNTANSI','education_program'=>'S1','graduation_date'=>'2026-08-15',
-        'diploma_number'=>'CONTOH-NOMOR-002','transcript_number'=>'CONTOH-TR-002','issue_date'=>'2026-09-01',
+        'diploma_number'=>'CONTOH-NOMOR-002','issue_date'=>'2026-09-01',
         'thesis_title'=>'Contoh judul skripsi panjang untuk menguji pemisahan halaman','official_credits'=>'180','official_gpa'=>'4.00',
     ]);
     for ($i=1; $i<=60; $i++) save_grade($longId, [

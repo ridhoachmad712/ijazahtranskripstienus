@@ -74,7 +74,6 @@ CREATE TABLE IF NOT EXISTS graduates (
  education_program TEXT NOT NULL DEFAULT 'S1',
  graduation_date TEXT NOT NULL DEFAULT '',
  diploma_number TEXT NOT NULL DEFAULT '',
- transcript_number TEXT NOT NULL DEFAULT '',
  issue_date TEXT NOT NULL DEFAULT '',
  thesis_title TEXT NOT NULL DEFAULT '',
  official_credits REAL,

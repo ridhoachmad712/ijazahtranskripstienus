@@ -4,12 +4,12 @@ declare(strict_types=1);
 function import_headers(string $kind): array
 {
     return match ($kind) {
-        'graduates' => ['nim','nama_lengkap','tempat_lahir','tanggal_lahir','kode_prodi','program_pendidikan','tanggal_lulus','nomor_ijazah_nasional','nomor_transkrip','tanggal_terbit','judul_skripsi','total_sks_resmi','ipk_resmi'],
+        'graduates' => ['nim','nama_lengkap','tempat_lahir','tanggal_lahir','kode_prodi','program_pendidikan','tanggal_lulus','nomor_ijazah_nasional','tanggal_terbit','judul_skripsi','total_sks_resmi','ipk_resmi'],
         default => throw new DomainException('Template impor tidak ditemukan.'),
     };
 }
 
-const XLS_TEXT_COLUMNS = ['nim','kode_mk','nomor_ijazah_nasional','nomor_transkrip','tanggal_lahir','tanggal_lulus','tanggal_terbit','nilai_huruf'];
+const XLS_TEXT_COLUMNS = ['nim','kode_mk','nomor_ijazah_nasional','tanggal_lahir','tanggal_lulus','tanggal_terbit','nilai_huruf'];
 
 // Menulis berkas .xls dengan sheet Data (baris 1 = nama kolom) dan sheet Petunjuk.
 function write_xls_book(string $path, array $headers, array $rows, string $title, array $instructions): void
@@ -207,7 +207,7 @@ function read_excel_file(string $path, string $extension, array $requiredHeaders
                     $value = '';
                 } elseif (in_array($header, ['tanggal_lahir','tanggal_lulus','tanggal_terbit'], true) && is_numeric($raw) && \PhpOffice\PhpSpreadsheet\Shared\Date::isDateTime($cell)) {
                     $value = \PhpOffice\PhpSpreadsheet\Shared\Date::excelToDateTimeObject((float) $raw)->format('Y-m-d');
-                } elseif (is_numeric($raw) && in_array($header, ['nim','kode_mk','nomor_ijazah_nasional','nomor_transkrip'], true)) {
+                } elseif (is_numeric($raw) && in_array($header, ['nim','kode_mk','nomor_ijazah_nasional'], true)) {
                     $value = trim($cell->getFormattedValue());
                 } else {
                     $value = trim((string) $raw);
@@ -267,7 +267,7 @@ function read_csv_upload(array $file, array $requiredHeaders): array
 function make_import_preview(array $file, string $kind): array
 {
     if ($kind !== 'graduates') throw new DomainException('Jenis impor tidak dikenal.');
-    $rows = read_import_upload($file, ['nim','nama_lengkap','tempat_lahir','tanggal_lahir','kode_prodi','tanggal_lulus','nomor_ijazah_nasional','nomor_transkrip','tanggal_terbit','total_sks_resmi','ipk_resmi']);
+    $rows = read_import_upload($file, ['nim','nama_lengkap','tempat_lahir','tanggal_lahir','kode_prodi','tanggal_lulus','nomor_ijazah_nasional','tanggal_terbit','total_sks_resmi','ipk_resmi']);
     return make_import_preview_from_rows($rows, $kind);
 }
 
@@ -283,7 +283,7 @@ function make_import_preview_from_rows(array $rows, string $kind): array
             'nim'=>$row['nim'], 'name'=>$row['nama_lengkap'], 'birth_place'=>$row['tempat_lahir'],
             'birth_date'=>$row['tanggal_lahir'], 'program_code'=>strtoupper($row['kode_prodi']),
             'education_program'=>$row['program_pendidikan'] ?? 'S1', 'graduation_date'=>$row['tanggal_lulus'],
-            'diploma_number'=>$row['nomor_ijazah_nasional'], 'transcript_number'=>$row['nomor_transkrip'],
+            'diploma_number'=>$row['nomor_ijazah_nasional'],
             'issue_date'=>$row['tanggal_terbit'], 'thesis_title'=>$row['judul_skripsi'] ?? '',
             'official_credits'=>$row['total_sks_resmi'], 'official_gpa'=>$row['ipk_resmi'],
         ]);

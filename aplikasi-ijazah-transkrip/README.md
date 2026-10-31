@@ -102,7 +102,7 @@ Menu **Impor lulusan** menyediakan template lulusan, menu **Kurikulum** menyedia
 Data lulusan wajib memiliki kolom:
 
 ```text
-nim,nama_lengkap,tempat_lahir,tanggal_lahir,kode_prodi,tanggal_lulus,nomor_ijazah_nasional,nomor_transkrip,tanggal_terbit,total_sks_resmi,ipk_resmi
+nim,nama_lengkap,tempat_lahir,tanggal_lahir,kode_prodi,tanggal_lulus,nomor_ijazah_nasional,tanggal_terbit,total_sks_resmi,ipk_resmi
 ```
 
 Kolom opsional: `program_pendidikan`, `judul_skripsi`. Tanggal memakai `YYYY-MM-DD`; angka desimal memakai titik. `kode_prodi` saat ini `AKUNTANSI` atau `MANAJEMEN`.

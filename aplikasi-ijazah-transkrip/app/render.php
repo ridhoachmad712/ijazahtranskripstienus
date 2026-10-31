@@ -76,7 +76,7 @@ function transcript_font_family(): string
 function sample_template_snapshot(array $template): array
 {
     $program = $template['program_code'];
-    $sample = ['nim'=>'0012345678','name'=>'Contoh Lulusan','birth_place'=>'Makassar','birth_date'=>'2002-04-18','program_code'=>$program,'graduation_date'=>'2026-08-15','diploma_number'=>'CONTOH-NOMOR-001','transcript_number'=>'CONTOH-TR-001','issue_date'=>'2026-09-01','thesis_title'=>'Contoh judul skripsi','official_credits'=>'6','official_gpa'=>'3.50'];
+    $sample = ['nim'=>'0012345678','name'=>'Contoh Lulusan','birth_place'=>'Makassar','birth_date'=>'2002-04-18','program_code'=>$program,'graduation_date'=>'2026-08-15','diploma_number'=>'CONTOH-NOMOR-001','issue_date'=>'2026-09-01','thesis_title'=>'Contoh judul skripsi','official_credits'=>'6','official_gpa'=>'3.50'];
     $grades = [
         ['course_code'=>'MK001','course_name'=>'Pengantar Akuntansi','credits'=>3,'grade_letter'=>'A','grade_weight'=>4],
         ['course_code'=>'MK002','course_name'=>'Mata Kuliah Kedua','credits'=>3,'grade_letter'=>'B','grade_weight'=>3],
@@ -175,7 +175,7 @@ function transcript_field_values(array $snapshot): array
     $texts = $snapshot['template']['settings']['texts'];
     return [
         'title' => $texts['title'],
-        'number' => trim((string) $graduate['transcript_number']) !== '' ? 'Nomor ' . $graduate['transcript_number'] : '',
+        'number' => trim((string) $graduate['diploma_number']) !== '' ? 'Nomor Ijazah ' . $graduate['diploma_number'] : '',
         'program_accreditation' => $texts['program_accreditation'],
         'issue' => (trim((string) $texts['issue_place']) ?: 'Makassar') . ', ' . format_date_id((string) $graduate['issue_date']),
         'signer_role' => $texts['signer_role'],

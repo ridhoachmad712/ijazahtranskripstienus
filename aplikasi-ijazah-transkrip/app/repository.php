@@ -69,7 +69,7 @@ function default_transcript_settings(string $program): array
         ],
         'fields' => [
             'title' => ['label'=>'Judul','x'=>20,'y'=>36,'w'=>170,'pt'=>16,'align'=>'center'],
-            'number' => ['label'=>'Nomor transkrip','x'=>20,'y'=>44,'w'=>170,'pt'=>9.5,'align'=>'center'],
+            'number' => ['label'=>'Nomor ijazah','x'=>20,'y'=>44,'w'=>170,'pt'=>9.5,'align'=>'center'],
             'identity' => ['label'=>'Identitas lulusan','x'=>12,'y'=>51,'w'=>186,'pt'=>9,'align'=>'left'],
             'program_accreditation' => ['label'=>'Akreditasi prodi','x'=>12,'y'=>72,'w'=>186,'pt'=>8.5,'align'=>'left'],
             'grades' => ['label'=>'Tabel nilai','x'=>12,'y'=>78,'w'=>186,'pt'=>9,'align'=>'left','h'=>145,'row'=>4.6],
@@ -191,7 +191,7 @@ function list_graduates(string $search = '', int $page = 1): array
 
 function graduate_input(array $source): array
 {
-    $keys = ['nim','name','birth_place','birth_date','program_code','education_program','graduation_date','diploma_number','transcript_number','issue_date','thesis_title','official_credits','official_gpa'];
+    $keys = ['nim','name','birth_place','birth_date','program_code','education_program','graduation_date','diploma_number','issue_date','thesis_title','official_credits','official_gpa'];
     $out = [];
     foreach ($keys as $key) {
         $out[$key] = trim((string) ($source[$key] ?? ''));
@@ -208,9 +208,7 @@ function graduate_errors(array $data, ?int $ignoreId = null): array
     foreach (['birth_date','graduation_date','issue_date'] as $key) {
         if (!valid_iso_date($data[$key])) $errors[] = 'Tanggal ' . $key . ' harus YYYY-MM-DD.';
     }
-    foreach (['diploma_number','transcript_number'] as $key) {
-        if (mb_strlen($data[$key]) > 100) $errors[] = $key . ' terlalu panjang.';
-    }
+    if (mb_strlen($data['diploma_number']) > 100) $errors[] = 'diploma_number terlalu panjang.';
     foreach (['official_credits','official_gpa'] as $key) {
         if ($data[$key] !== '' && (!is_numeric($data[$key]) || (float) $data[$key] < 0 || (float) $data[$key] > ($key === 'official_gpa' ? 4 : 500))) $errors[] = $key . ' tidak valid.';
     }
@@ -231,12 +229,12 @@ function save_graduate(array $data, ?int $id = null): int
     }
     $db = db();
     if ($id !== null) {
-        $stmt = $db->prepare('UPDATE graduates SET nim=?,name=?,birth_place=?,birth_date=?,program_code=?,education_program=?,graduation_date=?,diploma_number=?,transcript_number=?,issue_date=?,thesis_title=?,official_credits=?,official_gpa=?,updated_at=? WHERE id=?');
+        $stmt = $db->prepare('UPDATE graduates SET nim=?,name=?,birth_place=?,birth_date=?,program_code=?,education_program=?,graduation_date=?,diploma_number=?,issue_date=?,thesis_title=?,official_credits=?,official_gpa=?,updated_at=? WHERE id=?');
         $stmt->execute([...array_values($data), now_local(), $id]);
         audit('graduate', $id, 'updated');
         return $id;
     }
-    $stmt = $db->prepare('INSERT INTO graduates(nim,name,birth_place,birth_date,program_code,education_program,graduation_date,diploma_number,transcript_number,issue_date,thesis_title,official_credits,official_gpa,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
+    $stmt = $db->prepare('INSERT INTO graduates(nim,name,birth_place,birth_date,program_code,education_program,graduation_date,diploma_number,issue_date,thesis_title,official_credits,official_gpa,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
     $stmt->execute([...array_values($data), now_local(), now_local()]);
     $newId = (int) $db->lastInsertId();
     audit('graduate', $newId, 'created');
@@ -707,8 +705,8 @@ function issue_document(int $graduateId, string $kind): int
     if (!in_array($kind, ['diploma','transcript'], true)) throw new DomainException('Jenis dokumen tidak valid.');
     $graduate = find_graduate($graduateId);
     if (!$graduate) throw new DomainException('Lulusan tidak ditemukan.');
-    $number = trim((string) $graduate[$kind === 'diploma' ? 'diploma_number' : 'transcript_number']);
-    if ($graduate['nim'] === '' || $graduate['name'] === '' || $graduate['birth_place'] === '' || $graduate['birth_date'] === '' || $graduate['graduation_date'] === '' || $graduate['issue_date'] === '' || $number === '') throw new DomainException('Identitas, tanggal, dan nomor dokumen harus lengkap sebelum diterbitkan.');
+    $number = trim((string) $graduate['diploma_number']);
+    if ($graduate['nim'] === '' || $graduate['name'] === '' || $graduate['birth_place'] === '' || $graduate['birth_date'] === '' || $graduate['graduation_date'] === '' || $graduate['issue_date'] === '' || $number === '') throw new DomainException('Identitas, tanggal, dan nomor ijazah harus lengkap sebelum diterbitkan.');
     if ($graduate['issue_date'] < $graduate['graduation_date']) throw new DomainException('Tanggal penerbitan tidak boleh lebih awal dari tanggal kelulusan.');
     $template = active_template($kind, $graduate['program_code']);
     if (!$template) throw new DomainException('Template aktif belum tersedia.');

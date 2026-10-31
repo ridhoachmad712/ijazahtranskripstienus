@@ -194,7 +194,7 @@ try {
             if (($_GET['kind'] ?? '') !== 'graduates') throw new DomainException('Contoh CSV tidak ditemukan.');
             header('Content-Type: text/csv; charset=utf-8');
             header('Content-Disposition: attachment; filename="contoh-lulusan.csv"');
-            echo "nim,nama_lengkap,tempat_lahir,tanggal_lahir,kode_prodi,program_pendidikan,tanggal_lulus,nomor_ijazah_nasional,nomor_transkrip,tanggal_terbit,judul_skripsi,total_sks_resmi,ipk_resmi\r\n0012345678,Contoh Lulusan,Sungguminasa,2002-04-18,AKUNTANSI,S1,2026-08-15,CONTOH-001,CONTOH-TR-001,2026-09-01,Contoh judul skripsi,6,3.50\r\n";
+            echo "nim,nama_lengkap,tempat_lahir,tanggal_lahir,kode_prodi,program_pendidikan,tanggal_lulus,nomor_ijazah_nasional,tanggal_terbit,judul_skripsi,total_sks_resmi,ipk_resmi\r\n0012345678,Contoh Lulusan,Sungguminasa,2002-04-18,AKUNTANSI,S1,2026-08-15,CONTOH-001,2026-09-01,Contoh judul skripsi,6,3.50\r\n";
             break;
         case 'templates':
             templates_page();
