@@ -200,21 +200,20 @@ try {
             templates_page();
             break;
         case 'template-edit':
+            // Satu template untuk semua prodi; "program" hanya memilih prodi contoh di pratinjau.
             $kind = (string) ($_GET['kind'] ?? '');
-            $program = (string) ($_GET['program'] ?? '');
-            $template = active_template($kind,$program);
+            $template = active_template($kind);
             if (!$template) throw new DomainException('Template tidak ditemukan.');
-            template_edit_page($template);
+            template_edit_page($template, preview_program((string) ($_GET['program'] ?? '')));
             break;
         case 'template-save':
             if ($method !== 'POST') break;
             $kind = (string) ($_POST['kind'] ?? '');
-            $program = (string) ($_POST['program'] ?? '');
-            save_template_version($kind,$program,$_POST);
-            flash('success', 'Versi template baru aktif.');
-            redirect_to('template-edit', ['kind'=>$kind,'program'=>$program]);
+            save_template_version($kind, $_POST);
+            flash('success', 'Versi template baru aktif untuk semua program studi.');
+            redirect_to('template-edit', ['kind'=>$kind, 'program'=>preview_program((string) ($_POST['program'] ?? ''))]);
         case 'template-background':
-            $path = template_background_path((string) ($_GET['kind'] ?? 'diploma'), (string) ($_GET['program'] ?? ''));
+            $path = template_background_path((string) ($_GET['kind'] ?? 'diploma'));
             if ($path === null) {
                 http_response_code(404);
                 break;
@@ -228,31 +227,28 @@ try {
         case 'template-background-upload':
             if ($method !== 'POST') break;
             $kind = (string) ($_POST['kind'] ?? 'diploma');
-            $program = (string) ($_POST['program'] ?? '');
             $file = $_FILES['background'] ?? [];
             $error = (int) ($file['error'] ?? UPLOAD_ERR_NO_FILE);
             if (in_array($error, [UPLOAD_ERR_INI_SIZE, UPLOAD_ERR_FORM_SIZE], true)) throw new DomainException('Ukuran gambar latar maksimal 10 MB.');
             if ($error !== UPLOAD_ERR_OK || !is_uploaded_file((string) ($file['tmp_name'] ?? ''))) throw new DomainException('Pilih gambar blanko yang akan diunggah.');
-            $warning = save_template_background($kind, $program, (string) $file['tmp_name']);
+            $warning = save_template_background($kind, (string) $file['tmp_name']);
             flash('success', 'Latar blanko tersimpan. Latar hanya tampil di editor dan tidak ikut dicetak.');
             if ($warning !== null) flash('warning', $warning);
-            redirect_to('template-edit', ['kind'=>$kind,'program'=>$program]);
+            redirect_to('template-edit', ['kind'=>$kind, 'program'=>preview_program((string) ($_POST['program'] ?? ''))]);
         case 'template-background-delete':
             if ($method !== 'POST') break;
             $kind = (string) ($_POST['kind'] ?? 'diploma');
-            $program = (string) ($_POST['program'] ?? '');
-            delete_template_background($kind, $program);
+            delete_template_background($kind);
             flash('success', 'Latar blanko dihapus.');
-            redirect_to('template-edit', ['kind'=>$kind,'program'=>$program]);
+            redirect_to('template-edit', ['kind'=>$kind, 'program'=>preview_program((string) ($_POST['program'] ?? ''))]);
         case 'template-live-preview':
             if ($method !== 'POST') break;
             try {
                 $kind = (string) ($_POST['kind'] ?? '');
-                $program = (string) ($_POST['program'] ?? '');
-                $template = active_template($kind,$program);
+                $template = active_template($kind);
                 if (!$template) throw new DomainException('Template tidak ditemukan.');
                 $template['settings'] = template_settings_from_source($template, $_POST);
-                $snapshot = sample_template_snapshot($template);
+                $snapshot = sample_template_snapshot(template_for_program($template, preview_program((string) ($_POST['program'] ?? ''))));
                 $pdf = render_pdf($kind, $snapshot, null, true);
                 header('Content-Type: application/pdf');
                 header('Content-Disposition: inline; filename="pratinjau-template.pdf"');
@@ -266,8 +262,7 @@ try {
             break;
         case 'template-preview':
             $kind = (string) ($_GET['kind'] ?? '');
-            $program = (string) ($_GET['program'] ?? '');
-            $template = active_template($kind,$program);
+            $template = active_template($kind, preview_program((string) ($_GET['program'] ?? '')));
             if (!$template) throw new DomainException('Template tidak ditemukan.');
             $pdf = render_pdf($kind,sample_template_snapshot($template),null,true);
             header('Content-Type: application/pdf');
@@ -340,7 +335,7 @@ try {
         'graduate' => ['id'=>(int) ($_POST['graduate_id'] ?? $_POST['id'] ?? $doc['graduate_id'] ?? 0)],
         'grade-sheet' => ['id'=>(int) ($_POST['graduate_id'] ?? 0)],
         'curriculum' => ['program'=>(string) ($_POST['program'] ?? $_GET['program'] ?? '')],
-        'template-edit' => ['kind'=>(string) ($_POST['kind'] ?? ''),'program'=>(string) ($_POST['program'] ?? '')],
+        'template-edit' => ['kind'=>(string) ($_POST['kind'] ?? ''),'program'=>preview_program((string) ($_POST['program'] ?? ''))],
         default => [],
     };
     redirect_to($back,$query);

@@ -23,7 +23,7 @@ function page_header(string $title, string $active = '', bool $public = false): 
     $items['curriculum'] = ['Kurikulum','book'];
     if ($admin && (int) db()->query('SELECT COUNT(*) FROM graduates')->fetchColumn() > 0) $items['grades'] = ['Nilai','document'];
     $items['templates'] = ['Template','template'];
-    echo '<!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' . h($title) . ' — STIE Nusantara</title><link rel="stylesheet" href="assets/bootstrap/bootstrap.min.css"><link rel="stylesheet" href="assets/app.css?v=17"></head><body' . ($admin ? ' class="has-admin"' : ' class="public-page"') . '>';
+    echo '<!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' . h($title) . ' — STIE Nusantara</title><link rel="stylesheet" href="assets/bootstrap/bootstrap.min.css"><link rel="stylesheet" href="assets/app.css?v=18"></head><body' . ($admin ? ' class="has-admin"' : ' class="public-page"') . '>';
     if ($admin) {
         echo '<header class="app-header"><div class="app-header-inner"><a class="app-brand" href="' . h(route_url('dashboard')) . '"><span class="brand-mark">SN</span><span class="brand-copy"><strong>STIE Nusantara</strong><span>Ijazah &amp; Transkrip</span></span></a><button class="navbar-toggler app-menu-toggle d-lg-none" type="button" data-bs-toggle="collapse" data-bs-target="#main-navigation" aria-controls="main-navigation" aria-expanded="false" aria-label="Buka menu"><span aria-hidden="true">☰</span></button><nav class="collapse navbar-collapse app-navigation" id="main-navigation" aria-label="Menu utama"><div class="navbar-nav app-nav-links">';
         foreach ($items as $route => [$label, $icon]) echo '<a class="nav-link ' . ($active === $route ? 'active' : '') . '"' . ($active === $route ? ' aria-current="page"' : '') . ' href="' . h(route_url($route)) . '">' . ui_icon($icon) . '<span>' . h($label) . '</span></a>';
@@ -316,15 +316,15 @@ function grade_sheet_page(array $graduate): void
 function templates_page(): void
 {
     page_header('Template', 'templates');
-    echo '<h1 class="h4 mb-2">Template dokumen</h1><p class="text-secondary mb-4">Perubahan disimpan sebagai versi baru. Dokumen yang sudah terbit tetap memakai versi lama.</p><div class="table-responsive border rounded"><table class="table align-middle mb-0"><thead class="table-light"><tr><th>Dokumen</th><th>Prodi</th><th>Versi</th><th>Nama versi</th><th></th></tr></thead><tbody>';
-    foreach (array_keys(programs()) as $program) foreach (['diploma','transcript'] as $kind) {
-        $template = active_template($kind,$program);
-        echo '<tr><td>' . ($kind==='diploma'?'Ijazah':'Transkrip') . '</td><td>' . h(programs()[$program]['label']) . '</td><td>' . (int) $template['version'] . '</td><td>' . h($template['label']) . '</td><td><a class="btn btn-sm btn-outline-secondary" href="' . h(route_url('template-edit',['kind'=>$kind,'program'=>$program])) . '">Atur template</a></td></tr>';
+    echo '<h1 class="h4 mb-2">Template dokumen</h1><p class="text-secondary mb-4">Satu template untuk setiap jenis dokumen, dipakai semua program studi. Teks yang berbeda per prodi (misalnya gelar dan akreditasi) diisi di dalam template yang sama. Perubahan disimpan sebagai versi baru; dokumen yang sudah terbit tetap memakai versi lama.</p><div class="table-responsive border rounded"><table class="table align-middle mb-0"><thead class="table-light"><tr><th>Dokumen</th><th>Berlaku untuk</th><th>Versi</th><th>Nama versi</th><th></th></tr></thead><tbody>';
+    $labels = implode(', ', array_column(programs(), 'label'));
+    foreach (['diploma','transcript'] as $kind) {
+        $template = active_template($kind);
+        echo '<tr><td>' . ($kind === 'diploma' ? 'Ijazah' : 'Transkrip') . '</td><td>' . h($labels) . '</td><td>' . (int) $template['version'] . '</td><td>' . h($template['label']) . '</td><td><a class="btn btn-sm btn-outline-secondary" href="' . h(route_url('template-edit', ['kind'=>$kind])) . '">Atur template</a></td></tr>';
     }
     echo '</tbody></table></div>';
     page_footer();
 }
-
 // Grid editor digambar sebagai SVG dalam satuan mm agar garisnya tetap tajam saat kertas diperkecil.
 function sheet_grid_svg(float $width = 297, float $height = 210): string
 {
@@ -334,12 +334,12 @@ function sheet_grid_svg(float $width = 297, float $height = 210): string
     $lines .= '<line class="grid-center grid-center-x" x1="' . ($width / 2) . '" y1="0" x2="' . ($width / 2) . '" y2="' . $height . '"/><line class="grid-center" x1="0" y1="' . ($height / 2) . '" x2="' . $width . '" y2="' . ($height / 2) . '"/>';
     return '<svg class="sheet-grid" viewBox="0 0 ' . $width . ' ' . $height . '" preserveAspectRatio="none" aria-hidden="true">' . $lines . '</svg>';
 }
-function template_edit_page(array $template): void
+function template_edit_page(array $template, string $previewProgram): void
 {
     $kind = $template['kind'];
     $isDiploma = $kind === 'diploma';
-    $program = $template['program_code'];
     $settings = $template['settings'];
+    $programKeys = program_text_keys($kind);
     $page = page_size($kind);
     $defaultLabel = 'Revisi ' . format_date_id(date('Y-m-d')) . ' ' . date('H.i');
     $textLabels = ['title'=>'Judul transkrip','institution_accreditation'=>'Akreditasi institusi','opening'=>'Kalimat pembuka','study'=>'Kalimat studi','program'=>'Program studi','program_accreditation'=>'Akreditasi prodi','confer'=>'Kalimat pemberian gelar','degree'=>'Gelar','rights'=>'Hak dan kewajiban','left_role'=>'Jabatan pejabat kiri','right_role'=>'Jabatan pejabat kanan','left_name'=>'Nama pejabat kiri','right_name'=>'Nama pejabat kanan','left_nidn'=>'NIDN pejabat kiri','right_nidn'=>'NIDN pejabat kanan','issue_place'=>'Tempat penerbitan','signer_role'=>'Jabatan penandatangan','signer_name'=>'Nama penandatangan','signer_nidn'=>'NIDN penandatangan'];
@@ -353,8 +353,15 @@ function template_edit_page(array $template): void
         'Pengesahan' => ['issue', 'signer_role', 'signer_name', 'signer_nidn'],
     ];
     page_header('Atur template', 'templates');
-    echo '<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-4"><div><a class="small text-decoration-none" href="' . h(route_url('templates')) . '">← Template</a><h1 class="h4 mt-2 mb-1">' . ($isDiploma ? 'Ijazah' : 'Transkrip') . ' · ' . h(programs()[$program]['label']) . '</h1><p class="text-secondary mb-0">Edit sambil melihat hasil. Perubahan baru berlaku setelah disimpan sebagai versi baru.</p></div><span class="badge text-bg-light border">Versi aktif ' . (int) $template['version'] . '</span></div><div class="template-editor row g-3"><div class="col-12 col-xl-5 order-2 order-xl-1"><form id="template-form" data-kind="' . h($kind) . '" method="post" action="' . h(route_url('template-save')) . '">' . csrf_field() . '<input type="hidden" name="kind" value="' . h($kind) . '"><input type="hidden" name="program" value="' . h($program) . '">';
-    echo '<div class="card mb-3"><div class="card-body"><h2 class="h6">Redaksi dan pejabat</h2><div class="row g-3">';
+    echo '<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-4"><div><a class="small text-decoration-none" href="' . h(route_url('templates')) . '">← Template</a><h1 class="h4 mt-2 mb-1">' . ($isDiploma ? 'Ijazah' : 'Transkrip') . ' · Semua program studi</h1><p class="text-secondary mb-0">Satu template untuk semua prodi. Edit sambil melihat hasil; perubahan berlaku setelah disimpan sebagai versi baru.</p></div><span class="badge text-bg-light border">Versi aktif ' . (int) $template['version'] . '</span></div><div class="template-editor row g-3"><div class="col-12 col-xl-5 order-2 order-xl-1"><form id="template-form" data-kind="' . h($kind) . '" data-program-keys="' . h(implode(',', $programKeys)) . '" data-preview-program="' . h($previewProgram) . '" method="post" action="' . h(route_url('template-save')) . '">' . csrf_field() . '<input type="hidden" name="kind" value="' . h($kind) . '"><input type="hidden" name="program" value="' . h($previewProgram) . '">';
+    echo '<div class="card mb-3"><div class="card-body"><h2 class="h6">Teks per program studi</h2><p class="small text-secondary">Hanya bagian ini yang berbeda antarprodi. Pratinjau menampilkan prodi yang dipilih di atas kertas.</p>';
+    foreach (programs() as $code => $info) {
+        echo '<fieldset class="program-texts' . ($code === $previewProgram ? ' is-preview' : '') . '"><legend>' . h($info['label']) . ($code === $previewProgram ? ' <span class="badge text-bg-light border">sedang dipratinjau</span>' : '') . '</legend><div class="row g-2">';
+        foreach ($settings['program_texts'][$code] as $key => $value) echo '<div class="col-md-6"><label class="form-label small" for="program_text_' . h($code . '_' . $key) . '">' . h($textLabels[$key] ?? $key) . '</label><input class="form-control" id="program_text_' . h($code . '_' . $key) . '" name="program_text[' . h($code) . '][' . h($key) . ']" value="' . h($value) . '"></div>';
+        echo '</div></fieldset>';
+    }
+    echo '</div></div>';
+    echo '<div class="card mb-3"><div class="card-body"><h2 class="h6">Redaksi dan pejabat</h2><p class="small text-secondary">Berlaku untuk semua program studi.</p><div class="row g-3">';
     foreach ($settings['texts'] as $key => $value) echo '<div class="col-md-6"><label class="form-label small" for="text_' . h($key) . '">' . h($textLabels[$key] ?? $key) . '</label><input class="form-control" id="text_' . h($key) . '" name="text[' . h($key) . ']" value="' . h($value) . '"></div>';
     echo '</div>';
     if (!$isDiploma) echo '<div class="form-check mt-3"><input class="form-check-input" type="checkbox" id="show_thesis" name="show_thesis"' . (!empty($settings['show_thesis']) ? ' checked' : '') . '><label class="form-check-label" for="show_thesis">Tampilkan judul skripsi jika ada</label></div>';
@@ -395,11 +402,11 @@ function template_edit_page(array $template): void
     echo '<p class="form-text mb-0 mt-3">Koordinat dihitung dari pojok kiri atas blanko. Uji cetak pada kertas biasa sebelum memakai blanko asli.</p></div></div>';
     echo '<div class="template-save-bar"><label class="form-label small mb-1" for="label">Nama versi baru</label><input class="form-control form-control-sm mb-2" id="label" name="label" value="' . h($defaultLabel) . '" required><div class="d-flex flex-wrap align-items-center gap-2"><button class="btn btn-primary" type="submit">Simpan versi baru</button><button class="btn btn-outline-secondary" type="button" id="reset-changes" disabled>Batalkan perubahan</button><span id="dirty-status" class="small text-secondary" role="status">Belum ada perubahan.</span></div><div class="form-text mb-0">Versi lama tetap tersimpan untuk dokumen yang sudah diterbitkan.</div></div></form></div>';
 
-    $sample = sample_template_snapshot($template);
+    $sample = sample_template_snapshot(template_for_program($template, $previewProgram));
     $values = $isDiploma ? diploma_field_values($sample) : transcript_field_values($sample);
     $blocks = $isDiploma ? [] : transcript_block_html($sample);
-    $backgroundPath = template_background_path($kind, $program);
-    $backgroundHidden = '<input type="hidden" name="kind" value="' . h($kind) . '"><input type="hidden" name="program" value="' . h($program) . '">';
+    $backgroundPath = template_background_path($kind);
+    $backgroundHidden = '<input type="hidden" name="kind" value="' . h($kind) . '"><input type="hidden" name="program" value="' . h($previewProgram) . '">';
     $backgroundTools = '<div class="background-tools"><form id="background-form" method="post" enctype="multipart/form-data" action="' . h(route_url('template-background-upload')) . '">' . csrf_field() . $backgroundHidden . '<input class="visually-hidden" type="file" id="background-file" name="background" accept="image/jpeg,image/png,image/webp" tabindex="-1"></form>';
     if ($backgroundPath !== null) {
         $backgroundTools .= '<div class="form-check form-switch mb-0"><input class="form-check-input" type="checkbox" id="toggle-background" checked><label class="form-check-label small" for="toggle-background">Latar blanko</label></div><label class="background-opacity small" for="background-opacity">Kepekatan <input class="form-range" type="range" id="background-opacity" min="10" max="100" step="5" value="60"><span id="background-opacity-value">60%</span></label><button class="btn btn-sm btn-outline-secondary" type="button" data-background-pick>Ganti latar</button><form id="background-delete-form" method="post" action="' . h(route_url('template-background-delete')) . '">' . csrf_field() . $backgroundHidden . '<button class="btn btn-sm btn-outline-danger" type="submit">Hapus latar</button></form>';
@@ -407,7 +414,7 @@ function template_edit_page(array $template): void
         $backgroundTools .= '<button class="btn btn-sm btn-outline-secondary" type="button" data-background-pick>Unggah latar blanko</button><span class="small text-secondary">Pindaian/foto blanko kosong, ' . ($isDiploma ? 'lanskap' : 'potret') . ', JPG/PNG/WebP, maks. 10 MB. Hanya tampil di editor.</span>';
     }
     $backgroundTools .= '</div>';
-    $backgroundImage = $backgroundPath !== null ? '<img class="sheet-background" id="sheet-background" src="' . h(route_url('template-background', ['kind'=>$kind, 'program'=>$program, 'v'=>filemtime($backgroundPath)])) . '" alt="" aria-hidden="true">' : '';
+    $backgroundImage = $backgroundPath !== null ? '<img class="sheet-background" id="sheet-background" src="' . h(route_url('template-background', ['kind'=>$kind, 'v'=>filemtime($backgroundPath)])) . '" alt="" aria-hidden="true">' : '';
     $help = ['Klik ' . ($isDiploma ? 'teks atau kotak QR' : 'teks, blok identitas, atau tabel nilai') . ' pada kertas, lalu atur posisi, lebar, ukuran huruf, perataan, dan isinya di panel atas kertas.',
         'Geser dengan mouse untuk memindahkan. Saat grid aktif, bagian yang digeser menempel ke garis 10 mm dan ke tengah halaman.',
         'Tombol panah menggeser 1 mm; tahan Shift untuk 0,1 mm.'];
@@ -416,6 +423,9 @@ function template_edit_page(array $template): void
     $help[] = 'Unggah pindaian blanko kosong sebagai latar untuk mencocokkan posisi. Latar, bidang kosong, dan garis bantu hanya terlihat di editor, tidak ikut tercetak.';
     $help[] = 'Gunakan Buka PDF saat ini untuk uji cetak sebelum menyimpan.';
     echo '<div class="col-12 col-xl-7 order-1 order-xl-2"><div class="template-preview-panel card"><div class="card-header bg-white d-flex flex-wrap justify-content-between align-items-center gap-2"><div><strong>Pratinjau langsung</strong><div class="small text-secondary">Data lulusan pada contoh ini fiktif.</div></div><span id="preview-status" class="small text-secondary" role="status"></span></div><div class="card-body">';
+    echo '<nav class="preview-programs mb-3" aria-label="Prodi pada pratinjau"><span class="small text-secondary">Pratinjau sebagai:</span>';
+    foreach (programs() as $code => $info) echo '<a class="btn btn-sm ' . ($code === $previewProgram ? 'btn-secondary' : 'btn-outline-secondary') . '" href="' . h(route_url('template-edit', ['kind'=>$kind, 'program'=>$code])) . '"' . ($code === $previewProgram ? ' aria-current="true"' : '') . '>' . h($info['label']) . '</a>';
+    echo '</nav>';
     echo '<div class="editor-toolbar"><div class="form-check form-switch mb-0"><input class="form-check-input" type="checkbox" id="toggle-grid" checked><label class="form-check-label small" for="toggle-grid">Grid 10 mm + magnet</label></div><button class="btn btn-sm btn-outline-secondary" type="button" id="toggle-zoom" aria-pressed="false">Perbesar pratinjau</button><details class="editor-help"><summary aria-label="Bantuan editor" title="Bantuan">?</summary><div class="editor-help-body small"><ul><li>' . implode('</li><li>', array_map('h', $help)) . '</li></ul></div></details></div>' . $backgroundTools;
     echo '<div class="field-inspector" id="field-inspector"><div class="field-inspector-empty" id="inspector-empty">Klik bagian mana pun pada kertas untuk mengaturnya di sini.</div><div id="inspector-body" hidden><div class="field-inspector-head"><strong id="inspector-label"></strong><span id="alignment-status" class="small text-secondary" role="status"></span></div><div class="field-inspector-grid"><label>X dari kiri (mm)<input class="form-control form-control-sm" type="number" step="0.1" data-inspect="x"></label><label>Y dari atas (mm)<input class="form-control form-control-sm" type="number" step="0.1" data-inspect="y"></label><label><span id="inspector-width-label">Lebar (mm)</span><input class="form-control form-control-sm" type="number" step="0.1" data-inspect="w"></label><label data-inspect-wrap="pt">Huruf (pt)<input class="form-control form-control-sm" type="number" step="0.5" data-inspect="pt"></label><div data-inspect-wrap="align"><span class="inspector-caption">Perataan</span><div class="btn-group btn-group-sm" role="group" aria-label="Perataan teks"><button class="btn btn-outline-secondary" type="button" data-align="left">Kiri</button><button class="btn btn-outline-secondary" type="button" data-align="center">Tengah</button><button class="btn btn-outline-secondary" type="button" data-align="right">Kanan</button></div></div></div><div class="field-inspector-grid mt-2" data-inspect-wrap="h"><label>Tinggi area maksimal (mm)<input class="form-control form-control-sm" type="number" step="0.5" data-inspect="h"></label><label data-inspect-wrap="row">Tinggi baris (mm)<input class="form-control form-control-sm" type="number" step="0.1" min="3" max="20" data-inspect="row"></label></div><label class="field-inspector-text" data-inspect-wrap="text">Isi teks<input class="form-control form-control-sm" data-inspect="text"></label><div class="small text-secondary mt-2" data-inspect-wrap="auto">Isi bidang ini diambil otomatis dari data lulusan.</div><div class="small text-secondary mt-2" data-inspect-wrap="fit" id="inspector-fit-note"></div><div class="small text-secondary mt-2" data-inspect-wrap="qr" id="inspector-qr-note"></div></div></div>';
     if ($isDiploma) echo '<p id="qr-preview-note" class="small text-danger mb-2" role="status" hidden></p>';
@@ -432,7 +442,7 @@ function template_edit_page(array $template): void
     }
     if ($isDiploma) echo '<div class="canvas-qr" id="canvas-qr" tabindex="0" role="button" aria-label="Geser area QR" title="Panduan lokasi QR; drag untuk memindahkan">QR</div>';
     echo '</div></div><div class="d-flex flex-wrap gap-2 align-items-center mt-3"><button class="btn btn-sm btn-outline-secondary" type="submit" form="template-form" formaction="' . h(route_url('template-live-preview')) . '" formtarget="_blank" formnovalidate>Buka PDF saat ini</button><span class="small text-secondary">PDF dibuat saat tombol diklik untuk kalibrasi cetak.</span></div>';
-    echo '</div></div></div></div><style>' . TRANSCRIPT_BLOCK_CSS . '</style><script src="assets/template-editor.js?v=11" defer></script>';
+    echo '</div></div></div></div><style>' . TRANSCRIPT_BLOCK_CSS . '</style><script src="assets/template-editor.js?v=12" defer></script>';
     page_footer();
 }
 function verify_page(?array $document): void

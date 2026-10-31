@@ -107,21 +107,58 @@ function two_signer_transcript_settings(array $saved): array
         if (trim((string) ($saved['texts']['left_' . $part] ?? '')) !== '') $texts['signer_' . $part] = trim((string) $saved['texts']['left_' . $part]);
     }
     return ['texts'=>$texts, 'show_thesis'=>(bool) ($saved['show_thesis'] ?? true)];
-}function seed_templates(PDO $db): void
+}const SHARED_TEMPLATE = '*';
+
+// Teks yang berbeda per program studi; bagian lain template dipakai bersama oleh semua prodi.
+function program_text_keys(string $kind): array
 {
-    $count = (int) $db->query('SELECT COUNT(*) FROM templates')->fetchColumn();
-    if ($count > 0) {
-        return;
-    }
-    $stmt = $db->prepare('INSERT INTO templates(kind,program_code,version,label,settings_json,active,created_at) VALUES(?,?,?,?,?,1,?)');
-    foreach (array_keys(programs()) as $program) {
-        foreach (['diploma', 'transcript'] as $kind) {
-            $settings = $kind === 'diploma' ? default_diploma_settings($program) : default_transcript_settings($program);
-            $stmt->execute([$kind, $program, 1, 'Versi awal', json_encode($settings, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR), now_local()]);
-        }
-    }
+    return $kind === 'diploma' ? ['program', 'program_accreditation', 'degree'] : ['program_accreditation'];
 }
 
+function program_template_defaults(string $kind, string $program): array
+{
+    return $kind === 'diploma' ? default_diploma_settings($program) : default_transcript_settings($program);
+}
+
+function default_shared_settings(string $kind): array
+{
+    $keys = array_flip(program_text_keys($kind));
+    $settings = program_template_defaults($kind, (string) array_key_first(programs()));
+    $settings['texts'] = array_diff_key($settings['texts'], $keys);
+    $settings['program_texts'] = [];
+    foreach (array_keys(programs()) as $program) $settings['program_texts'][$program] = array_intersect_key(program_template_defaults($kind, $program)['texts'], $keys);
+    return $settings;
+}
+
+// Satu template per jenis dokumen. Template lama per prodi digabung: tata letak dari versi aktif terbaru,
+// teks khusus prodi dari template prodi masing-masing.
+function seed_templates(PDO $db): void
+{
+    $insert = $db->prepare('INSERT INTO templates(kind,program_code,version,label,settings_json,active,created_at) VALUES(?,?,?,?,?,1,?)');
+    foreach (['diploma', 'transcript'] as $kind) {
+        $exists = $db->prepare('SELECT COUNT(*) FROM templates WHERE kind=? AND program_code=?');
+        $exists->execute([$kind, SHARED_TEMPLATE]);
+        if ((int) $exists->fetchColumn() > 0) continue;
+        $stmt = $db->prepare('SELECT * FROM templates WHERE kind=? AND program_code<>? AND active=1 ORDER BY id DESC');
+        $stmt->execute([$kind, SHARED_TEMPLATE]);
+        $rows = $stmt->fetchAll();
+        $settings = default_shared_settings($kind);
+        $label = 'Versi awal';
+        if ($rows) {
+            $programKeys = array_flip(program_text_keys($kind));
+            $latest = normalized_template_settings($kind, $rows[0]['program_code'], json_decode($rows[0]['settings_json'], true, 512, JSON_THROW_ON_ERROR));
+            $settings = array_replace($latest, ['texts'=>array_diff_key($latest['texts'], $programKeys), 'program_texts'=>$settings['program_texts']]);
+            foreach ($rows as $row) {
+                if (!isset($settings['program_texts'][$row['program_code']])) continue;
+                $texts = normalized_template_settings($kind, $row['program_code'], json_decode($row['settings_json'], true, 512, JSON_THROW_ON_ERROR))['texts'];
+                $settings['program_texts'][$row['program_code']] = array_intersect_key($texts, $programKeys);
+            }
+            $label = 'Gabungan template per prodi';
+        }
+        $insert->execute([$kind, SHARED_TEMPLATE, 1, $label, json_encode($settings, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR), now_local()]);
+        $db->prepare('UPDATE templates SET active=0 WHERE kind=? AND program_code<>?')->execute([$kind, SHARED_TEMPLATE]);
+    }
+}
 function find_graduate(int $id): ?array
 {
     $stmt = db()->prepare('SELECT * FROM graduates WHERE id=?');
@@ -459,16 +496,30 @@ function delete_grade(int $graduateId, int $gradeId): void
     if ($stmt->rowCount()) audit('graduate', $graduateId, 'grade_deleted', (string) $gradeId);
 }
 
-function active_template(string $kind, string $program): ?array
+// Tanpa $program: template bersama apa adanya (untuk editor). Dengan $program: teks khusus prodi sudah digabung.
+function active_template(string $kind, ?string $program = null): ?array
 {
     $stmt = db()->prepare('SELECT * FROM templates WHERE kind=? AND program_code=? AND active=1 ORDER BY version DESC LIMIT 1');
-    $stmt->execute([$kind, $program]);
+    $stmt->execute([$kind, SHARED_TEMPLATE]);
     $row = $stmt->fetch();
     if (!$row) return null;
-    $row['settings'] = normalized_template_settings($kind, $program, json_decode($row['settings_json'], true, 512, JSON_THROW_ON_ERROR));
-    return $row;
+    $row['settings'] = normalized_template_settings($kind, SHARED_TEMPLATE, json_decode($row['settings_json'], true, 512, JSON_THROW_ON_ERROR));
+    return $program === null ? $row : template_for_program($row, $program);
 }
 
+function preview_program(string $program): string
+{
+    return array_key_exists($program, programs()) ? $program : (string) array_key_first(programs());
+}
+
+function template_for_program(array $template, string $program): array
+{
+    $settings = $template['settings'];
+    $own = $settings['program_texts'][$program] ?? array_fill_keys(program_text_keys($template['kind']), '');
+    $settings['texts'] = $settings['texts'] + $own;
+    unset($settings['program_texts']);
+    return array_replace($template, ['settings'=>$settings, 'program_code'=>$program]);
+}
 function template_by_id(int $id): ?array
 {
     $stmt = db()->prepare('SELECT * FROM templates WHERE id=?');
@@ -481,21 +532,28 @@ function template_by_id(int $id): ?array
 
 function normalized_template_settings(string $kind, string $program, array $saved): array
 {
-    $defaults = $kind === 'diploma' ? default_diploma_settings($program) : default_transcript_settings($program);
+    $shared = $program === SHARED_TEMPLATE;
+    $defaults = $shared ? default_shared_settings($kind) : program_template_defaults($kind, $program);
     if ($kind === 'transcript' && !isset($saved['fields'])) $saved = legacy_transcript_settings($saved);
     elseif ($kind === 'transcript' && isset($saved['texts']['left_role'])) $saved = two_signer_transcript_settings($saved);
     $settings = array_replace_recursive($defaults, $saved);
     // Bidang yang tidak lagi dipakai tata letak saat ini dibuang.
     $settings['texts'] = array_intersect_key($settings['texts'], $defaults['texts']);
     $settings['fields'] = array_intersect_key($settings['fields'], $defaults['fields']);
+    if ($shared) {
+        $settings['program_texts'] = array_intersect_key($settings['program_texts'], $defaults['program_texts']);
+        foreach ($settings['program_texts'] as $code => $texts) $settings['program_texts'][$code] = array_intersect_key($texts, $defaults['program_texts'][$code]);
+    }
     return $settings;
 }
-
 function template_settings_from_source(array $current, array $source): array
 {
     $settings = $current['settings'];
     $page = page_size($current['kind']);
     foreach ($settings['texts'] as $key => $_) $settings['texts'][$key] = trim((string) ($source['text'][$key] ?? ''));
+    foreach ($settings['program_texts'] ?? [] as $program => $texts) {
+        foreach ($texts as $key => $_) $settings['program_texts'][$program][$key] = trim((string) ($source['program_text'][$program][$key] ?? ''));
+    }
     foreach ($settings['fields'] as $key => $field) {
         foreach (array_merge(['x','y','w','pt'], array_intersect(['h','row'], array_keys($field))) as $part) {
             $value = filter_var($source['field'][$key][$part] ?? null, FILTER_VALIDATE_FLOAT);
@@ -524,9 +582,9 @@ function template_settings_from_source(array $current, array $source): array
     }
     return $settings;
 }
-function save_template_version(string $kind, string $program, array $source): int
+function save_template_version(string $kind, array $source): int
 {
-    $current = active_template($kind, $program);
+    $current = active_template($kind);
     if (!$current) throw new DomainException('Template tidak ditemukan.');
     $settings = template_settings_from_source($current, $source);
     $label = trim((string) ($source['label'] ?? ''));
@@ -534,11 +592,11 @@ function save_template_version(string $kind, string $program, array $source): in
     $db = db();
     $db->beginTransaction();
     try {
-        $db->prepare('UPDATE templates SET active=0 WHERE kind=? AND program_code=?')->execute([$kind, $program]);
+        $db->prepare('UPDATE templates SET active=0 WHERE kind=?')->execute([$kind]);
         $stmt = $db->prepare('INSERT INTO templates(kind,program_code,version,label,settings_json,active,created_at) VALUES(?,?,?,?,?,1,?)');
-        $stmt->execute([$kind, $program, (int) $current['version'] + 1, $label, json_encode($settings, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR), now_local()]);
+        $stmt->execute([$kind, SHARED_TEMPLATE, (int) $current['version'] + 1, $label, json_encode($settings, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR), now_local()]);
         $id = (int) $db->lastInsertId();
-        audit('template', $id, 'version_created', $kind . ':' . $program);
+        audit('template', $id, 'version_created', $kind);
         $db->commit();
         return $id;
     } catch (Throwable $e) {
@@ -546,7 +604,6 @@ function save_template_version(string $kind, string $program, array $source): in
         throw $e;
     }
 }
-
 // Latar blanko hanya alat bantu kalibrasi di editor; tidak ikut versi template dan tidak dicetak.
 const TEMPLATE_BACKGROUND_TYPES = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp'];
 const TEMPLATE_BACKGROUND_MAX_BYTES = 10 * 1024 * 1024;
@@ -556,19 +613,22 @@ function template_background_dir(): string
     return rtrim((string) app_config()['storage_root'], '/\\') . '/backgrounds';
 }
 
-function template_background_path(string $kind, string $program): ?string
+function template_background_path(string $kind): ?string
 {
-    if (!in_array($kind, ['diploma','transcript'], true) || !array_key_exists($program, programs())) return null;
-    foreach (TEMPLATE_BACKGROUND_TYPES as $extension) {
-        $path = template_background_dir() . '/' . $kind . '-' . $program . '.' . $extension;
+    if (!in_array($kind, ['diploma','transcript'], true)) return null;
+    $candidates = [];
+    foreach (TEMPLATE_BACKGROUND_TYPES as $extension) $candidates[] = template_background_dir() . '/' . $kind . '.' . $extension;
+    foreach (array_keys(programs()) as $program) {
+        foreach (TEMPLATE_BACKGROUND_TYPES as $extension) $candidates[] = template_background_dir() . '/' . $kind . '-' . $program . '.' . $extension;
+    }
+    foreach ($candidates as $path) {
         if (is_file($path)) return $path;
     }
     return null;
 }
-
-function save_template_background(string $kind, string $program, string $sourcePath): ?string
+function save_template_background(string $kind, string $sourcePath): ?string
 {
-    if (!in_array($kind, ['diploma','transcript'], true) || !array_key_exists($program, programs())) throw new DomainException('Template tidak dikenal.');
+    if (!in_array($kind, ['diploma','transcript'], true)) throw new DomainException('Template tidak dikenal.');
     $page = page_size($kind);
     $size = is_file($sourcePath) ? filesize($sourcePath) : false;
     if ($size === false || $size === 0) throw new DomainException('Pilih gambar blanko yang akan diunggah.');
@@ -581,25 +641,25 @@ function save_template_background(string $kind, string $program, string $sourceP
     if (min($width, $height) < 560 || max($width, $height) < 800) throw new DomainException('Resolusi gambar terlalu kecil. Pindai blanko minimal 100 dpi.');
     $directory = template_background_dir();
     if (!is_dir($directory) && !mkdir($directory, 0770, true) && !is_dir($directory)) throw new RuntimeException('Direktori latar tidak dapat dibuat.');
-    $old = template_background_path($kind, $program);
-    $target = $directory . '/' . $kind . '-' . $program . '.' . $extension;
+    $target = $directory . '/' . $kind . '.' . $extension;
     $temporary = $target . '.tmp';
     if (!copy($sourcePath, $temporary)) throw new RuntimeException('Gambar latar gagal disimpan.');
-    if ($old !== null && $old !== $target) unlink($old);
+    while (($old = template_background_path($kind)) !== null && $old !== $target) unlink($old);
     if (!rename($temporary, $target)) throw new RuntimeException('Gambar latar gagal disimpan.');
-    audit('template', null, 'background_uploaded', $kind . ':' . $program);
+    audit('template', null, 'background_uploaded', $kind);
     $ratio = ($width / $height) / ($page['w'] / $page['h']);
     return abs($ratio - 1) > 0.03 ? 'Perbandingan ukuran gambar berbeda dari ' . $page['label'] . ', jadi gambar direntangkan agar pas. Pastikan pindaian mencakup seluruh tepi blanko.' : null;
 }
 
-function delete_template_background(string $kind, string $program): void
+function delete_template_background(string $kind): void
 {
-    $path = template_background_path($kind, $program);
-    if ($path === null) return;
-    unlink($path);
-    audit('template', null, 'background_deleted', $kind . ':' . $program);
+    $deleted = false;
+    while (($path = template_background_path($kind)) !== null) {
+        unlink($path);
+        $deleted = true;
+    }
+    if ($deleted) audit('template', null, 'background_deleted', $kind);
 }
-
 function documents_for(int $graduateId): array
 {
     $stmt = db()->prepare('SELECT * FROM documents WHERE graduate_id=? ORDER BY id DESC');

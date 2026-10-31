@@ -15,7 +15,7 @@ function expect(bool $condition, string $message): void
 }
 
 try {
-    expect((int) db()->query('SELECT COUNT(*) FROM templates')->fetchColumn() === 4, 'Template awal tidak lengkap.');
+    expect((int) db()->query('SELECT COUNT(*) FROM templates')->fetchColumn() === 2, 'Template awal harus satu ijazah dan satu transkrip.');
     db()->prepare('INSERT INTO admins(username,password_hash,created_at) VALUES(?,?,?)')->execute(['uji-admin', password_hash('uji-saja', PASSWORD_DEFAULT), now_local()]);
     $_SESSION['admin_id'] = (int) db()->lastInsertId();
     ob_start();
@@ -119,34 +119,54 @@ try {
     expect($blankGraduate['official_credits'] === null && $blankGraduate['official_gpa'] === null, 'SKS/IPK resmi kosong harus tersimpan sebagai NULL.');
     expect(save_grade_sheet((int) $blankGraduate['id'], ['001AKT'=>'B']) === 1, 'Nilai ditolak padahal SKS/IPK resmi belum diisi.');
     expect(official_totals_match(grade_summary(grades_for((int) $blankGraduate['id'])), $blankGraduate) === null, 'Total resmi kosong harus dianggap belum dapat dibandingkan.');
+    // Satu template per jenis dokumen; teks khusus prodi digabung saat dipakai.
+    $templateRows = db()->query('SELECT kind, program_code FROM templates WHERE active=1 ORDER BY kind')->fetchAll();
+    expect($templateRows === [['kind'=>'diploma','program_code'=>'*'], ['kind'=>'transcript','program_code'=>'*']], 'Harus ada tepat satu template aktif per jenis dokumen.');
+    expect(active_template('diploma', 'AKUNTANSI')['settings']['texts']['program'] === 'Program Studi S-1 Akuntansi' && active_template('diploma', 'MANAJEMEN')['settings']['texts']['degree'] === 'SARJANA MANAJEMEN (S.M.)' && !isset(active_template('diploma', 'MANAJEMEN')['settings']['program_texts']), 'Teks khusus prodi tidak digabung ke template.');
+    $legacyDb = new PDO('sqlite::memory:');
+    $legacyDb->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+    $legacyDb->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+    schema($legacyDb);
+    $legacyDb->exec("DELETE FROM templates");
+    $legacyInsert = $legacyDb->prepare('INSERT INTO templates(kind,program_code,version,label,settings_json,active,created_at) VALUES(?,?,?,?,?,?,?)');
+    $legacyInsert->execute(['diploma', 'AKUNTANSI', 3, 'Lama', json_encode(['texts'=>['opening'=>'Pembuka lama', 'degree'=>'GELAR AKUNTANSI LAMA']]), 1, now_local()]);
+    $legacyInsert->execute(['diploma', 'MANAJEMEN', 2, 'Lama', json_encode(['texts'=>['opening'=>'Pembuka terbaru', 'degree'=>'GELAR MANAJEMEN LAMA'], 'fields'=>['name'=>['x'=>40]]]), 1, now_local()]);
+    $legacyInsert->execute(['transcript', 'MANAJEMEN', 1, 'Lama', json_encode(['title'=>'TRANSKRIP LAMA', 'signer_name'=>'Dr. Lama', 'accreditation'=>'Baik']), 1, now_local()]);
+    seed_templates($legacyDb);
+    $merged = $legacyDb->query("SELECT kind, settings_json FROM templates WHERE program_code='*' AND active=1 ORDER BY kind")->fetchAll(PDO::FETCH_KEY_PAIR);
+    $mergedDiploma = json_decode($merged['diploma'], true);
+    $mergedTranscript = json_decode($merged['transcript'], true);
+    expect(count($merged) === 2 && (int) $legacyDb->query("SELECT COUNT(*) FROM templates WHERE active=1")->fetchColumn() === 2, 'Template lama per prodi harus digabung menjadi satu per jenis dokumen.');
+    expect($mergedDiploma['texts']['opening'] === 'Pembuka terbaru' && $mergedDiploma['fields']['name']['x'] === 40 && $mergedDiploma['program_texts']['AKUNTANSI']['degree'] === 'GELAR AKUNTANSI LAMA' && $mergedDiploma['program_texts']['MANAJEMEN']['degree'] === 'GELAR MANAJEMEN LAMA' && !isset($mergedDiploma['texts']['degree']), 'Gabungan ijazah harus memakai tata letak terbaru dan gelar masing-masing prodi.');
+    expect($mergedTranscript['texts']['title'] === 'TRANSKRIP LAMA' && $mergedTranscript['texts']['signer_name'] === 'Dr. Lama' && $mergedTranscript['program_texts']['MANAJEMEN']['program_accreditation'] === 'Baik' && $mergedTranscript['program_texts']['AKUNTANSI']['program_accreditation'] === '', 'Gabungan transkrip tidak sesuai.');
     $makeImage = static function (string $path, int $width, int $height): string {
         $image = imagecreatetruecolor($width, $height);
         imagepng($image, $path);
         imagedestroy($image);
         return $path;
     };
-    expect(template_background_path('diploma', 'AKUNTANSI') === null, 'Latar blanko tidak boleh ada sebelum diunggah.');
-    expect(save_template_background('diploma', 'AKUNTANSI', $makeImage($root . '/latar.png', 1169, 827)) === null, 'Latar A4 lanskap tidak boleh diberi peringatan rasio.');
-    expect(str_ends_with((string) template_background_path('diploma', 'AKUNTANSI'), 'diploma-AKUNTANSI.png') && template_background_path('diploma', 'MANAJEMEN') === null, 'Latar blanko tersimpan pada prodi yang salah.');
-    expect(save_template_background('diploma', 'AKUNTANSI', $makeImage($root . '/latar-lebar.png', 1400, 700)) !== null, 'Latar dengan rasio berbeda harus diberi peringatan.');
+    expect(template_background_path('diploma') === null, 'Latar blanko tidak boleh ada sebelum diunggah.');
+    expect(save_template_background('diploma', $makeImage($root . '/latar.png', 1169, 827)) === null, 'Latar A4 lanskap tidak boleh diberi peringatan rasio.');
+    expect(str_ends_with((string) template_background_path('diploma'), 'diploma.png') && template_background_path('transcript') === null, 'Latar blanko tersimpan pada jenis dokumen yang salah.');
+    expect(save_template_background('diploma', $makeImage($root . '/latar-lebar.png', 1400, 700)) !== null, 'Latar dengan rasio berbeda harus diberi peringatan.');
     foreach (['potret' => $makeImage($root . '/latar-potret.png', 827, 1169), 'bukan gambar' => $root . '/import-bukan-gambar.txt'] as $label => $path) {
         if (!is_file($path)) file_put_contents($path, 'bukan gambar');
         try {
-            save_template_background('diploma', 'AKUNTANSI', $path);
+            save_template_background('diploma', $path);
             throw new RuntimeException('Latar ' . $label . ' seharusnya ditolak.');
         } catch (DomainException) {
         }
     }
     expect(!str_contains(render_diploma_html(sample_template_snapshot(active_template('diploma', 'AKUNTANSI')), null, true), 'sheet-background'), 'Latar blanko tidak boleh masuk ke PDF.');
-    expect(save_template_background('transcript', 'AKUNTANSI', $makeImage($root . '/latar-transkrip.png', 827, 1169)) === null && str_ends_with((string) template_background_path('transcript', 'AKUNTANSI'), 'transcript-AKUNTANSI.png'), 'Latar transkrip potret harus diterima.');
+    expect(save_template_background('transcript', $makeImage($root . '/latar-transkrip.png', 827, 1169)) === null && str_ends_with((string) template_background_path('transcript'), 'transcript.png'), 'Latar transkrip potret harus diterima.');
     try {
-        save_template_background('transcript', 'AKUNTANSI', $root . '/latar.png');
+        save_template_background('transcript', $root . '/latar.png');
         throw new RuntimeException('Latar transkrip lanskap seharusnya ditolak.');
     } catch (DomainException) {
     }
-    delete_template_background('transcript', 'AKUNTANSI');
-    delete_template_background('diploma', 'AKUNTANSI');
-    expect(template_background_path('diploma', 'AKUNTANSI') === null, 'Latar blanko belum terhapus.');
+    delete_template_background('transcript');
+    delete_template_background('diploma');
+    expect(template_background_path('diploma') === null, 'Latar blanko belum terhapus.');
     $previewTemplate = active_template('diploma', 'AKUNTANSI');
     $previewSource = ['text'=>$previewTemplate['settings']['texts'], 'field'=>$previewTemplate['settings']['fields'], 'qr'=>$previewTemplate['settings']['qr']];
     $previewSource['text']['opening'] = 'Redaksi pratinjau yang belum disimpan';
@@ -159,10 +179,12 @@ try {
     $qrFinalWithoutActivation = render_diploma_html(sample_template_snapshot($previewTemplate), null, false);
     expect(str_contains($qrPreview, 'PANDUAN QR') && !str_contains($qrFinalWithoutActivation, 'PANDUAN QR'), 'Panduan QR harus terlihat hanya pada pratinjau.');
     expect(!str_contains($qrPreview, 'sheet-grid') && !str_contains($qrFinalWithoutActivation, 'sheet-grid'), 'Grid editor tidak boleh masuk ke PDF.');
-    $qrTemplate = active_template('diploma', 'MANAJEMEN');
-    $qrSource = ['label'=>'Uji lokasi QR', 'text'=>$qrTemplate['settings']['texts'], 'field'=>$qrTemplate['settings']['fields'], 'qr'=>['x'=>24,'y'=>28,'size'=>25]];
-    save_template_version('diploma', 'MANAJEMEN', $qrSource);
+    $qrTemplate = active_template('diploma');
+    $qrSource = ['label'=>'Uji lokasi QR', 'text'=>$qrTemplate['settings']['texts'], 'program_text'=>$qrTemplate['settings']['program_texts'], 'field'=>$qrTemplate['settings']['fields'], 'qr'=>['x'=>24,'y'=>28,'size'=>25]];
+    $qrSource['program_text']['MANAJEMEN']['degree'] = 'SARJANA MANAJEMEN (S.M.) UJI';
+    save_template_version('diploma', $qrSource);
     $savedQr = active_template('diploma', 'MANAJEMEN');
+    expect($savedQr['settings']['texts']['degree'] === 'SARJANA MANAJEMEN (S.M.) UJI' && active_template('diploma', 'AKUNTANSI')['settings']['texts']['degree'] === 'SARJANA AKUNTANSI (S.Ak.)' && (float) active_template('diploma', 'AKUNTANSI')['settings']['qr']['x'] === 24.0, 'Teks khusus prodi atau tata letak bersama tidak tersimpan.');
     expect((int) $savedQr['version'] === 2 && (float) $savedQr['settings']['qr']['x'] === 24.0 && (float) $savedQr['settings']['qr']['y'] === 28.0 && (float) $savedQr['settings']['qr']['size'] === 25.0 && !$savedQr['settings']['qr']['enabled'], 'Lokasi QR tidak tersimpan saat pencetakan belum aktif.');
     $transcriptTemplate = active_template('transcript', 'AKUNTANSI');
     $transcriptSource = ['text'=>$transcriptTemplate['settings']['texts'], 'field'=>$transcriptTemplate['settings']['fields'], 'show_thesis'=>'1'];
@@ -170,12 +192,12 @@ try {
     $transcriptSettings = template_settings_from_source($transcriptTemplate, $transcriptSource);
     expect(str_contains(render_transcript_html(sample_template_snapshot(array_replace($transcriptTemplate, ['settings'=>$transcriptSettings])), true), 'JUDUL TRANSKRIP PRATINJAU'), 'Pratinjau transkrip tidak mengikuti isian.');
     foreach (['diploma','transcript'] as $kind) {
-        $template = active_template($kind, 'AKUNTANSI');
+        $template = active_template($kind);
         $settings = $template['settings'];
         if ($kind === 'diploma') {
             $settings['texts']['left_name'] = 'Pejabat Kiri';
             $settings['texts']['right_name'] = 'Pejabat Kanan';
-            $settings['texts']['program_accreditation'] = 'Akreditasi prodi contoh untuk pengujian';
+            $settings['program_texts']['AKUNTANSI']['program_accreditation'] = 'Akreditasi prodi contoh untuk pengujian';
             $settings['qr'] = ['enabled'=>true,'x'=>12,'y'=>13,'size'=>22];
         } else {
             $settings['texts']['signer_name'] = 'Pejabat Transkrip';

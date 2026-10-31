@@ -33,6 +33,10 @@
   let leaving = false;
 
   const fieldInput = (key, part) => form.elements.namedItem(`field[${key}][${part}]`);
+  // Teks khusus prodi (misalnya gelar) diambil dari isian prodi yang sedang dipratinjau.
+  const programKeys = (form.dataset.programKeys || '').split(',').filter(Boolean);
+  const textInputFor = (key) => form.elements.namedItem(programKeys.includes(key)
+    ? `program_text[${form.dataset.previewProgram}][${key}]` : `text[${key}]`);
   const qrInput = (part) => form.elements.namedItem(`qr[${part}]`);
   const numberValue = (input, fallback = 0) => {
     const value = Number.parseFloat(input?.value ?? '');
@@ -63,7 +67,7 @@
     if (!selectedNode) return null;
     const key = selectedNode.dataset.field;
     if (!key) return part === 'w' ? qrInput('size') : ['x', 'y'].includes(part) ? qrInput(part) : null;
-    return part === 'text' ? form.elements.namedItem(`text[${key}]`) : fieldInput(key, part);
+    return part === 'text' ? textInputFor(key) : fieldInput(key, part);
   }
 
   function syncInspector() {
@@ -137,7 +141,7 @@
         if (node.dataset.fit) fitBlock(node, points, numberValue(fieldInput(key, 'row'), 0));
         return;
       }
-      const textInput = form.elements.namedItem(`text[${key}]`);
+      const textInput = textInputFor(key);
       const issuePlace = key === 'issue' ? form.elements.namedItem('text[issue_place]')?.value.trim() : '';
       const value = textInput ? textInput.value.trim()
         : issuePlace ? node.dataset.fixedText.replace(/^(Diberikan di )?.*?, /, (_, prefix = '') => `${prefix}${issuePlace}, `) : node.dataset.fixedText;
@@ -263,7 +267,7 @@
   if (sheet) {
     sheet.querySelectorAll('[data-field]:not(.canvas-block)').forEach((node) => {
       const key = node.dataset.field;
-      if (!form.elements.namedItem(`text[${key}]`)) node.dataset.fixedText = node.textContent;
+      if (!textInputFor(key)) node.dataset.fixedText = node.textContent;
     });
     sheet.querySelectorAll('[data-field], #canvas-qr').forEach((node) => {
       node.addEventListener('pointerdown', (event) => {
