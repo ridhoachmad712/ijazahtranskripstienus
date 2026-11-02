@@ -18,6 +18,11 @@ function render_pdf(string $kind, array $snapshot, ?string $token = null, bool $
     $html = $kind === 'diploma'
         ? render_diploma_html($snapshot, $token, $preview)
         : render_transcript_html($snapshot, $preview);
+    return pdf_from_html($kind, $html);
+}
+
+function pdf_from_html(string $kind, string $html): string
+{
     $pdf = new Dompdf(dompdf_options());
     register_document_fonts($pdf->getFontMetrics());
     $pdf->loadHtml($html, 'UTF-8');
@@ -71,6 +76,22 @@ function register_document_fonts(\Dompdf\FontMetrics $metrics): void
 function transcript_font_family(): string
 {
     return cambria_installed() ? '"Cambria","Times New Roman",serif' : '"Times New Roman",serif';
+}
+
+// Dokumen terbit digambar ulang dari snapshot penerbitannya di atas pindaian blanko, hanya untuk dilihat di layar.
+function document_blanko_html(array $document): string
+{
+    $background = template_background_path($document['kind']);
+    if ($background === null) throw new DomainException('Latar blanko ' . ($document['kind'] === 'diploma' ? 'ijazah' : 'transkrip') . ' belum diunggah. Unggah di menu Template.');
+    $snapshot = json_decode($document['snapshot_json'], true, 512, JSON_THROW_ON_ERROR);
+    $html = $document['kind'] === 'diploma'
+        ? render_diploma_html($snapshot, $document['qr_token'] ?: null, false)
+        : render_transcript_html($snapshot, false);
+    $mime = (string) array_search(pathinfo($background, PATHINFO_EXTENSION), TEMPLATE_BACKGROUND_TYPES, true);
+    $image = '<img class="blanko-image" src="data:' . $mime . ';base64,' . base64_encode((string) file_get_contents($background)) . '" alt="">';
+    $label = '<div class="blanko-label">Simulasi di atas blanko &middot; jangan dicetak pada blanko asli</div>';
+    $style = '.blanko-image{position:absolute;left:0;top:0;width:100%;height:100%}.blanko-label{position:absolute;right:3mm;bottom:2mm;font:6.5pt Arial,sans-serif;color:#b00020;background:#fff;padding:.6mm 1.5mm;border:.4pt solid #b00020}</style>';
+    return str_replace(['</style>', '<div class="page">'], [$style, '<div class="page">' . $image], preg_replace('#</div></body></html>$#', $label . '</div></body></html>', $html));
 }
 
 function sample_template_snapshot(array $template): array

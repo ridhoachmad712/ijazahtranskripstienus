@@ -303,6 +303,15 @@ try {
             header('Cache-Control: no-store');
             readfile($pdfFile);
             break;
+        case 'document-blanko':
+            $document = find_document((int) ($_GET['id'] ?? 0));
+            if (!$document) throw new DomainException('Dokumen tidak ditemukan.');
+            $pdf = pdf_from_html($document['kind'], document_blanko_html($document));
+            header('Content-Type: application/pdf');
+            header('Content-Disposition: inline; filename="simulasi-blanko-' . ($document['kind'] === 'diploma' ? 'ijazah' : 'transkrip') . '-' . (int) $document['id'] . '.pdf"');
+            header('Cache-Control: no-store');
+            echo $pdf;
+            break;
         case 'revoke':
             if ($method !== 'POST') break;
             $doc = find_document((int) ($_POST['id'] ?? 0));
@@ -321,7 +330,7 @@ try {
     $back = match ($route) {
         'login' => 'login',
         'graduate-save' => 'graduate-form',
-        'issue','revoke' => 'graduate',
+        'issue','revoke','document-blanko' => 'graduate',
         'graduate-delete' => 'graduate',
         'grade-delete','grade-sheet-save','grade-sheet-import','grade-sheet-discard' => 'grade-sheet',
         'grade-sheet-template' => 'grades',
@@ -333,7 +342,8 @@ try {
     };
     $query = match ($back) {
         'graduate-form' => ['id'=>(int) ($_POST['id'] ?? 0)],
-        'graduate' => ['id'=>(int) ($_POST['graduate_id'] ?? $_POST['id'] ?? $doc['graduate_id'] ?? 0)],
+        // Pada pembatalan, id di formulir adalah id dokumen; lulusan diambil dari dokumennya.
+        'graduate' => ['id'=>(int) ($_POST['graduate_id'] ?? $doc['graduate_id'] ?? $document['graduate_id'] ?? $_POST['id'] ?? 0)],
         'grade-sheet' => ['id'=>(int) ($_POST['graduate_id'] ?? 0)],
         'curriculum' => ['program'=>(string) ($_POST['program'] ?? $_GET['program'] ?? '')],
         'template-edit' => ['kind'=>(string) ($_POST['kind'] ?? ''),'program'=>preview_program((string) ($_POST['program'] ?? ''))],

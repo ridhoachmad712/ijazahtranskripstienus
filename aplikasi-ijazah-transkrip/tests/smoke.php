@@ -335,6 +335,22 @@ try {
     save_import_preview(make_import_preview_from_rows([array_replace($newGraduate, ['_line'=>2])], 'graduates'));
     save_import_preview(make_import_preview_from_rows([array_replace($newGraduate, ['_line'=>2])], 'graduates'));
     expect(count(glob($root . '/imports/*.json') ?: []) === 1, 'Pratinjau impor lama tidak dibersihkan.');
+    // Dokumen terbit dapat dilihat di atas pindaian blanko, tanpa mengubah PDF arsip.
+    $blankoDocument = find_document($diplomaId);
+    try {
+        document_blanko_html($blankoDocument);
+        throw new RuntimeException('Simulasi blanko seharusnya ditolak saat latar belum diunggah.');
+    } catch (DomainException) {
+    }
+    save_template_background('diploma', $makeImage($root . '/blanko-ijazah.png', 1169, 827));
+    $blankoHtml = document_blanko_html($blankoDocument);
+    expect(str_contains($blankoHtml, '<div class="page"><img class="blanko-image" src="data:image/png;base64,') && str_contains($blankoHtml, 'Simulasi di atas blanko') && str_contains($blankoHtml, 'Contoh Lulusan') && str_contains($blankoHtml, 'QR verifikasi'), 'Simulasi blanko harus memuat latar, isi snapshot, QR, dan label simulasi.');
+    $blankoPdf = pdf_from_html('diploma', $blankoHtml);
+    expect(str_starts_with($blankoPdf, '%PDF') && $pageCount($blankoPdf) === 1 && hash_file('sha256', document_pdf_file($blankoDocument)) === $blankoDocument['pdf_sha256'], 'Simulasi blanko gagal atau mengubah PDF arsip.');
+    ob_start();
+    graduate_detail_page(find_graduate($id));
+    expect(str_contains((string) ob_get_clean(), 'r=document-blanko&amp;id=' . $diplomaId), 'Tombol Lihat di blanko belum tersedia di riwayat dokumen.');
+    delete_template_background('diploma');
     if (getenv('STIE_KEEP_QA') === '1') {
         $diplomaTarget = dirname(__DIR__) . '/storage/qa-diploma-with-qr.pdf';
         copy(document_pdf_file($diploma), $diplomaTarget);
