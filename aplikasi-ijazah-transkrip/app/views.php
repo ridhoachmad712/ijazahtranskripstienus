@@ -78,16 +78,22 @@ function pagination_html(string $route, array $query, int $page, int $total): st
     return $html . '</div>';
 }
 
-function graduates_page(string $search, int $page = 1): void
+// Daftar lulusan dipisah per program studi; setiap tab punya pencarian dan halamannya sendiri.
+function graduates_page(string $search, int $page, string $program): void
 {
-    [$rows, $total] = list_graduates($search, $page);
+    [$rows, $total] = list_graduates($search, $page, $program);
+    $label = programs()[$program]['label'];
     page_header('Data lulusan', 'graduates');
-    echo '<div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4"><div><h1 class="h4 mb-1">Data lulusan</h1><p class="text-secondary mb-0">Identitas bersama untuk kedua dokumen.</p></div><a class="btn btn-primary" href="' . h(route_url('graduate-form')) . '">Tambah lulusan</a></div><form class="row g-2 mb-3" method="get"><input type="hidden" name="r" value="graduates"><div class="col-sm-5"><input class="form-control" name="q" value="' . h($search) . '" placeholder="Cari nama atau NIM" aria-label="Cari nama atau NIM"></div><div class="col-auto"><button class="btn btn-outline-secondary">Cari</button></div></form><div class="table-responsive border rounded"><table class="table table-hover align-middle mb-0"><thead class="table-light"><tr><th>NIM</th><th>Nama</th><th>Prodi</th><th>Nilai</th><th>Ijazah</th><th>Transkrip</th><th></th></tr></thead><tbody>';
+    echo '<div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3"><div><h1 class="h4 mb-1">Data lulusan</h1><p class="text-secondary mb-0">Identitas bersama untuk kedua dokumen, dipisah per program studi.</p></div><a class="btn btn-primary" href="' . h(route_url('graduate-form', ['program'=>$program])) . '">Tambah lulusan ' . h($label) . '</a></div>';
+    echo '<ul class="nav nav-pills mb-3">';
+    foreach (graduate_counts_by_program() as $code => $count) echo '<li class="nav-item"><a class="nav-link' . ($code === $program ? ' active' : '') . '"' . ($code === $program ? ' aria-current="page"' : '') . ' href="' . h(route_url('graduates', ['program'=>$code])) . '">' . h(programs()[$code]['label']) . ' <span class="badge ' . ($code === $program ? 'text-bg-light' : 'text-bg-secondary') . '">' . $count . '</span></a></li>';
+    echo '</ul>';
+    echo '<form class="row g-2 mb-3" method="get"><input type="hidden" name="r" value="graduates"><input type="hidden" name="program" value="' . h($program) . '"><div class="col-sm-5"><input class="form-control" name="q" value="' . h($search) . '" placeholder="Cari nama atau NIM di ' . h($label) . '" aria-label="Cari nama atau NIM"></div><div class="col-auto"><button class="btn btn-outline-secondary">Cari</button></div></form><div class="table-responsive border rounded"><table class="table table-hover align-middle mb-0"><thead class="table-light"><tr><th>NIM</th><th>Nama</th><th>Nilai</th><th>Ijazah</th><th>Transkrip</th><th></th></tr></thead><tbody>';
     foreach ($rows as $row) {
-        echo '<tr><td>' . h($row['nim']) . '</td><td>' . h($row['name']) . '</td><td>' . h(programs()[$row['program_code']]['label'] ?? $row['program_code']) . '</td><td>' . (int) $row['grade_count'] . ' MK</td><td>' . status_badge($row['diploma_status']) . '</td><td>' . status_badge($row['transcript_status']) . '</td><td><a class="btn btn-sm btn-outline-secondary" href="' . h(route_url('graduate', ['id'=>$row['id']])) . '">Buka</a></td></tr>';
+        echo '<tr><td>' . h($row['nim']) . '</td><td>' . h($row['name']) . '</td><td>' . (int) $row['grade_count'] . ' MK</td><td>' . status_badge($row['diploma_status']) . '</td><td>' . status_badge($row['transcript_status']) . '</td><td><a class="btn btn-sm btn-outline-secondary" href="' . h(route_url('graduate', ['id'=>$row['id']])) . '">Buka</a></td></tr>';
     }
-    if (!$rows) echo '<tr><td colspan="7" class="empty-table-cell"><div class="empty-state"><div class="empty-state-icon">' . ui_icon('people') . '</div><strong>' . ($search === '' ? 'Belum ada data lulusan' : 'Lulusan tidak ditemukan') . '</strong><span>' . ($search === '' ? 'Tambahkan satu lulusan atau impor data dari Excel.' : 'Coba kata kunci nama atau NIM yang lain.') . '</span>' . ($search === '' ? '<a class="btn btn-sm btn-primary mt-2" href="' . h(route_url('graduate-form')) . '">Tambah lulusan</a>' : '') . '</div></td></tr>';
-    echo '</tbody></table></div>' . pagination_html('graduates', $search === '' ? [] : ['q'=>$search], $page, $total);
+    if (!$rows) echo '<tr><td colspan="6" class="empty-table-cell"><div class="empty-state"><div class="empty-state-icon">' . ui_icon('people') . '</div><strong>' . ($search === '' ? 'Belum ada lulusan ' . h($label) : 'Lulusan tidak ditemukan') . '</strong><span>' . ($search === '' ? 'Tambahkan satu lulusan atau impor data dari Excel.' : 'Coba kata kunci nama atau NIM yang lain.') . '</span>' . ($search === '' ? '<a class="btn btn-sm btn-primary mt-2" href="' . h(route_url('graduate-form', ['program'=>$program])) . '">Tambah lulusan</a>' : '') . '</div></td></tr>';
+    echo '</tbody></table></div>' . pagination_html('graduates', ['program'=>$program] + ($search === '' ? [] : ['q'=>$search]), $page, $total);
     page_footer();
 }
 
@@ -143,12 +149,12 @@ function status_badge(?string $status): string
     };
 }
 
-function graduate_form_page(?array $graduate = null): void
+function graduate_form_page(?array $graduate = null, string $defaultProgram = ''): void
 {
     $edit = $graduate !== null;
     $title = $edit ? 'Ubah lulusan' : 'Tambah lulusan';
     page_header($title, 'graduates');
-    echo '<div class="d-flex align-items-center gap-3 mb-4"><a class="btn btn-sm btn-outline-secondary" href="' . h($edit ? route_url('graduate', ['id'=>$graduate['id']]) : route_url('graduates')) . '">Kembali</a><h1 class="h4 mb-0">' . h($title) . '</h1></div><div class="card"><div class="card-body"><form method="post" action="' . h(route_url('graduate-save')) . '">' . csrf_field() . '<input type="hidden" name="id" value="' . h($graduate['id'] ?? '') . '"><div class="row g-3">';
+    echo '<div class="d-flex align-items-center gap-3 mb-4"><a class="btn btn-sm btn-outline-secondary" href="' . h($edit ? route_url('graduate', ['id'=>$graduate['id']]) : route_url('graduates', ['program'=>$defaultProgram])) . '">Kembali</a><h1 class="h4 mb-0">' . h($title) . '</h1></div><div class="card"><div class="card-body"><form method="post" action="' . h(route_url('graduate-save')) . '">' . csrf_field() . '<input type="hidden" name="id" value="' . h($graduate['id'] ?? '') . '"><div class="row g-3">';
     $fields = [
         'nim'=>['NIM','text',true], 'name'=>['Nama resmi','text',true], 'birth_place'=>['Tempat lahir','text',false],
         'birth_date'=>['Tanggal lahir','date',false], 'education_program'=>['Program pendidikan','text',false],
@@ -163,7 +169,7 @@ function graduate_form_page(?array $graduate = null): void
         echo '<div class="' . $col . '"><label class="form-label" for="' . h($key) . '">' . h($label) . '</label><input class="form-control" id="' . h($key) . '" name="' . h($key) . '" type="' . h($type) . '" value="' . h($graduate[$key] ?? '') . '"' . ($required ? ' required' : '') . $step . '></div>';
     }
     echo '<div class="col-md-4"><label class="form-label" for="program_code">Program studi</label><select class="form-select" id="program_code" name="program_code" required>';
-    foreach (programs() as $code => $program) echo '<option value="' . h($code) . '"' . (($graduate['program_code'] ?? '') === $code ? ' selected' : '') . '>' . h($program['label']) . '</option>';
+    foreach (programs() as $code => $program) echo '<option value="' . h($code) . '"' . (($graduate['program_code'] ?? $defaultProgram) === $code ? ' selected' : '') . '>' . h($program['label']) . '</option>';
     echo '</select></div></div><p class="form-text mt-3">NIM dan nomor dokumen disimpan sebagai teks agar angka nol di depan tidak hilang. Total SKS/IPK resmi dibandingkan dengan nilai sebelum transkrip diterbitkan.</p><button class="btn btn-primary mt-2" type="submit">Simpan data lulusan</button></form></div></div>';
     page_footer();
 }
@@ -183,7 +189,7 @@ function graduate_detail_page(array $graduate): void
         if ($doc['kind'] === 'transcript') $gradesLocked = true;
     }
     page_header('Detail lulusan', $fromGrades ? 'grades' : 'graduates');
-    echo '<div class="d-flex flex-wrap align-items-start justify-content-between gap-2 mb-4"><div><a class="small text-decoration-none" href="' . h(route_url($fromGrades ? 'grades' : 'graduates')) . '">← ' . ($fromGrades ? 'Nilai' : 'Data lulusan') . '</a><h1 class="h4 mt-2 mb-1">' . h($graduate['name']) . '</h1><div class="text-secondary">NIM ' . h($graduate['nim']) . ' · ' . h(programs()[$graduate['program_code']]['label'] ?? $graduate['program_code']) . '</div></div>' . ($profileLocked ? '<span class="small text-secondary">Identitas terkunci selama ada dokumen aktif</span>' : '<a class="btn btn-outline-secondary" href="' . h(route_url('graduate-form',['id'=>$id])) . '">Ubah identitas</a>') . '</div>';
+    echo '<div class="d-flex flex-wrap align-items-start justify-content-between gap-2 mb-4"><div><a class="small text-decoration-none" href="' . h(($fromGrades ? route_url('grades') : route_url('graduates', ['program'=>$graduate['program_code']]))) . '">← ' . ($fromGrades ? 'Nilai' : 'Data lulusan') . '</a><h1 class="h4 mt-2 mb-1">' . h($graduate['name']) . '</h1><div class="text-secondary">NIM ' . h($graduate['nim']) . ' · ' . h(programs()[$graduate['program_code']]['label'] ?? $graduate['program_code']) . '</div></div>' . ($profileLocked ? '<span class="small text-secondary">Identitas terkunci selama ada dokumen aktif</span>' : '<a class="btn btn-outline-secondary" href="' . h(route_url('graduate-form',['id'=>$id])) . '">Ubah identitas</a>') . '</div>';
     echo '<div class="row g-3 mb-3"><div class="col-lg-6"><div class="card h-100"><div class="card-body"><h2 class="h6">Ijazah</h2><p class="small text-secondary">Nomor: ' . h($graduate['diploma_number'] ?: 'Belum diisi') . '</p><div class="d-flex flex-wrap gap-2"><a class="btn btn-sm btn-outline-secondary" target="_blank" href="' . h(route_url('preview',['id'=>$id,'kind'=>'diploma'])) . '">Pratinjau PDF</a>' . issue_button($id,'diploma',$docs) . '</div></div></div></div><div class="col-lg-6"><div class="card h-100"><div class="card-body"><h2 class="h6">Transkrip nilai</h2><p class="small text-secondary">' . count($grades) . ' mata kuliah · ' . number_format($summary['credits'], 0, ',', '.') . ' SKS · IPK hitung ' . ($summary['gpa'] !== null ? number_format($summary['gpa'], 2, ',', '.') : '—') . '</p><div class="d-flex flex-wrap gap-2"><a class="btn btn-sm btn-outline-secondary" target="_blank" href="' . h(route_url('preview',['id'=>$id,'kind'=>'transcript'])) . '">Pratinjau PDF</a>' . issue_button($id,'transcript',$docs) . '</div></div></div></div></div>';
     $match = official_totals_match($summary, $graduate);
     echo '<div class="card mb-3" id="nilai"><div class="card-body d-flex flex-wrap align-items-center justify-content-between gap-3"><div><h2 class="h6 mb-1">Mata kuliah dan nilai</h2><div class="small text-secondary">' . count($grades) . ' mata kuliah · ' . h(format_number($summary['credits'])) . ' SKS · IPK hitung ' . ($summary['gpa'] !== null ? h(number_format($summary['gpa'], 2, ',', '.')) : '—') . ($match === null ? ' · SKS/IPK resmi belum diisi' : ($match ? ' · <span class="text-success">cocok dengan data resmi</span>' : ' · <span class="text-danger">belum cocok dengan data resmi</span>')) . '</div></div><a class="btn btn-outline-secondary" href="' . h(route_url('grade-sheet', ['id'=>$id])) . '">' . ($gradesLocked ? 'Lihat nilai' : 'Isi nilai') . '</a></div></div>';

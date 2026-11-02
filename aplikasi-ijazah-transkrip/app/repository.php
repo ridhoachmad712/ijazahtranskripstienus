@@ -176,17 +176,26 @@ function find_graduate_by_nim(string $nim): ?array
 const LIST_PAGE_SIZE = 50;
 
 // Mengembalikan [baris halaman ini, jumlah seluruh hasil].
-function list_graduates(string $search = '', int $page = 1): array
+function list_graduates(string $search = '', int $page = 1, ?string $program = null): array
 {
     $like = '%' . $search . '%';
-    $count = db()->prepare('SELECT COUNT(*) FROM graduates g WHERE ?=\'\' OR g.nim LIKE ? OR g.name LIKE ?');
-    $count->execute([$search, $like, $like]);
-    $stmt = db()->prepare('SELECT g.*, (SELECT COUNT(*) FROM grades WHERE graduate_id=g.id) AS grade_count, (SELECT status FROM documents WHERE graduate_id=g.id AND kind=\'diploma\' ORDER BY id DESC LIMIT 1) AS diploma_status, (SELECT status FROM documents WHERE graduate_id=g.id AND kind=\'transcript\' ORDER BY id DESC LIMIT 1) AS transcript_status FROM graduates g WHERE ?=\'\' OR g.nim LIKE ? OR g.name LIKE ? ORDER BY g.id DESC LIMIT ? OFFSET ?');
-    foreach ([$search, $like, $like] as $index => $value) $stmt->bindValue($index + 1, $value);
-    $stmt->bindValue(4, LIST_PAGE_SIZE, PDO::PARAM_INT);
-    $stmt->bindValue(5, (max(1, $page) - 1) * LIST_PAGE_SIZE, PDO::PARAM_INT);
+    $where = '(?=\'\' OR g.nim LIKE ? OR g.name LIKE ?)' . ($program !== null ? ' AND g.program_code=?' : '');
+    $params = $program !== null ? [$search, $like, $like, $program] : [$search, $like, $like];
+    $count = db()->prepare('SELECT COUNT(*) FROM graduates g WHERE ' . $where);
+    $count->execute($params);
+    $stmt = db()->prepare('SELECT g.*, (SELECT COUNT(*) FROM grades WHERE graduate_id=g.id) AS grade_count, (SELECT status FROM documents WHERE graduate_id=g.id AND kind=\'diploma\' ORDER BY id DESC LIMIT 1) AS diploma_status, (SELECT status FROM documents WHERE graduate_id=g.id AND kind=\'transcript\' ORDER BY id DESC LIMIT 1) AS transcript_status FROM graduates g WHERE ' . $where . ' ORDER BY g.id DESC LIMIT ? OFFSET ?');
+    foreach ($params as $index => $value) $stmt->bindValue($index + 1, $value);
+    $stmt->bindValue(count($params) + 1, LIST_PAGE_SIZE, PDO::PARAM_INT);
+    $stmt->bindValue(count($params) + 2, (max(1, $page) - 1) * LIST_PAGE_SIZE, PDO::PARAM_INT);
     $stmt->execute();
     return [$stmt->fetchAll(), (int) $count->fetchColumn()];
+}
+
+function graduate_counts_by_program(): array
+{
+    $counts = array_fill_keys(array_keys(programs()), 0);
+    foreach (db()->query('SELECT program_code, COUNT(*) FROM graduates GROUP BY program_code')->fetchAll(PDO::FETCH_KEY_PAIR) as $program => $count) $counts[$program] = (int) $count;
+    return $counts;
 }
 
 function graduate_input(array $source): array

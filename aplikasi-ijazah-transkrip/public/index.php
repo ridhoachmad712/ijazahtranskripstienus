@@ -56,7 +56,7 @@ try {
             dashboard_page();
             break;
         case 'graduates':
-            graduates_page(trim((string) ($_GET['q'] ?? '')), max(1, (int) ($_GET['page'] ?? 1)));
+            graduates_page(trim((string) ($_GET['q'] ?? '')), max(1, (int) ($_GET['page'] ?? 1)), preview_program((string) ($_GET['program'] ?? '')));
             break;
         case 'grades':
             if ((int) db()->query('SELECT COUNT(*) FROM graduates')->fetchColumn() === 0) {
@@ -69,7 +69,7 @@ try {
             $id = (int) ($_GET['id'] ?? 0);
             $graduate = $id ? find_graduate($id) : null;
             if ($id && !$graduate) throw new DomainException('Lulusan tidak ditemukan.');
-            graduate_form_page($graduate);
+            graduate_form_page($graduate, preview_program((string) ($_GET['program'] ?? '')));
             break;
         case 'graduate-save':
             if ($method !== 'POST') break;
@@ -79,9 +79,10 @@ try {
             redirect_to('graduate', ['id'=>$savedId]);
         case 'graduate-delete':
             if ($method !== 'POST') break;
+            $deleted = find_graduate((int) ($_POST['id'] ?? 0));
             delete_graduate((int) ($_POST['id'] ?? 0));
             flash('success', 'Lulusan dan seluruh nilainya dihapus.');
-            redirect_to('graduates');
+            redirect_to('graduates', ['program'=>$deleted['program_code']]);
         case 'graduate':
             $graduate = find_graduate((int) ($_GET['id'] ?? 0));
             if (!$graduate) throw new DomainException('Lulusan tidak ditemukan.');

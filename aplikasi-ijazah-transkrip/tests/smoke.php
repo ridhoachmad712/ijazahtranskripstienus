@@ -313,6 +313,16 @@ try {
     expect(count($firstPage) === LIST_PAGE_SIZE && $total > LIST_PAGE_SIZE && count($secondPage) === $total - LIST_PAGE_SIZE, 'Paginasi daftar lulusan salah.');
     [$searchPage, $searchTotal] = list_graduates('Paginasi 1', 1);
     expect($searchTotal === 11 && count($searchPage) === 11, 'Pencarian dengan paginasi salah.');
+    $programCounts = graduate_counts_by_program();
+    [$accountingRows, $accountingTotal] = list_graduates('', 1, 'AKUNTANSI');
+    [$managementRows, $managementTotal] = list_graduates('', 1, 'MANAJEMEN');
+    expect(array_sum($programCounts) === $total && $accountingTotal === $programCounts['AKUNTANSI'] && $managementTotal === $programCounts['MANAJEMEN'] && $managementTotal > LIST_PAGE_SIZE, 'Jumlah lulusan per prodi salah.');
+    expect(array_unique(array_column($accountingRows, 'program_code')) === ['AKUNTANSI'] && array_unique(array_column($managementRows, 'program_code')) === ['MANAJEMEN'], 'Daftar lulusan tercampur antarprodi.');
+    expect(list_graduates('Paginasi 1', 1, 'AKUNTANSI')[1] === 0 && list_graduates('Paginasi 1', 1, 'MANAJEMEN')[1] === 11, 'Pencarian harus terbatas pada prodi yang dipilih.');
+    ob_start();
+    graduates_page('', 1, 'AKUNTANSI');
+    $accountingPage = (string) ob_get_clean();
+    expect(str_contains($accountingPage, 'r=graduates&amp;program=MANAJEMEN') && str_contains($accountingPage, 'Tambah lulusan S-1 Akuntansi') && str_contains($accountingPage, 'r=graduate-form&amp;program=AKUNTANSI') && !str_contains($accountingPage, 'Paginasi 1'), 'Halaman data lulusan belum dipisah per prodi.');
     try {
         curriculum_rows_from_form(['course_code'=>['MK1'], 'course_name'=>['Satu'], 'credits'=>['2.5']]);
         throw new RuntimeException('SKS pecahan seharusnya ditolak.');
